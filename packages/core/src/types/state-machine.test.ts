@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   isValidTransition,
   getAllowedEvents,
-  TERMINAL_STATES,
   ARENA_STATES,
 } from "./state-machine.js";
 
@@ -81,25 +80,25 @@ describe("any state → PAUSED", () => {
 
 describe("terminal states", () => {
   it("COMPLETED has no outgoing transitions", () => {
-    expect(isValidTransition("COMPLETED", "anything")).toBe(false);
+    expect(isValidTransition("COMPLETED", "initialize" as any)).toBe(false);
   });
 
   it("CANCELLED has no outgoing transitions", () => {
-    expect(isValidTransition("CANCELLED", "resume")).toBe(false);
+    expect(isValidTransition("CANCELLED", "resume" as any)).toBe(false);
   });
 
   it("FAILED has no outgoing transitions", () => {
-    expect(isValidTransition("FAILED", "initialize")).toBe(false);
+    expect(isValidTransition("FAILED", "initialize" as any)).toBe(false);
   });
 });
 
 describe("invalid transitions", () => {
   it("rejects CREATED → COMPLETED (skipping states)", () => {
-    expect(isValidTransition("CREATED", "consensus_reached")).toBe(false);
+    expect(isValidTransition("CREATED", "consensus_reached" as any)).toBe(false);
   });
 
   it("rejects IMPLEMENTING → IMPLEMENTING (self-loop)", () => {
-    expect(isValidTransition("IMPLEMENTING", "implementation_started")).toBe(false);
+    expect(isValidTransition("IMPLEMENTING", "implementation_started" as any)).toBe(false);
   });
 });
 

@@ -22,7 +22,7 @@ describe("assignRoles", () => {
 
 describe("switchRoles", () => {
   it("swaps builder and reviewer, increments round", () => {
-    const r = { number: roundNumber(1), builder: agentId("a"), reviewer: agentId("b"), startedAt: new Date().toISOString() };
+    const r = { number: roundNumber(1), builder: agentId("a"), reviewer: agentId("b"), startedAt: new Date().toISOString() as any };
     const s = switchRoles(r);
     expect(s.builder).toBe("b");
     expect(s.reviewer).toBe("a");

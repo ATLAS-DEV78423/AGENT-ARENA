@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   EVENT_TYPES,
   createAnalysisEvent,
-  createDiscussionMessage,
   createFinding,
   createApproval,
   createPlan,
