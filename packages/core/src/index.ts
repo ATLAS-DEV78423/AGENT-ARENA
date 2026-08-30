@@ -10,3 +10,4 @@ export * from "./session/manager.js";
 export * from "./session/budget.js";
 export * from "./orchestrator.js";
 export * from "./fake-orchestrator-adapter.js";
+export * from "./persistence/event-store.js";
