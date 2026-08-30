@@ -1,0 +1,19 @@
+{
+  "name": "arena-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint packages/ apps/",
+    "lint:fix": "eslint packages/ apps/ --fix",
+    "format": "prettier --write \"packages/**/*.{ts,json}\" \"apps/**/*.{ts,json}\"",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rm -rf dist"
+  }
+}
