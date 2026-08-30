@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AgentId, AgentCapabilities, AgentStatus, agentId, sessionId } from "@arena/core";
 import { AgentAdapter, DetectionResult, AgentSessionHandle } from "../adapter.js";
 import { OrchestratorAdapter, AgentResponse } from "@arena/core";
+import { buildResponse } from "../response-parser.js";
 
 export interface OpenCodeResponse {
   kind: "analysis" | "message" | "plan_approved" | "plan_rejected"
@@ -43,7 +44,8 @@ export class OpenCodeAdapter implements AgentAdapter, OrchestratorAdapter {
   }
 
   async start(_config: { task: string; cwd: string }): Promise<AgentSessionHandle> {
-    if (!this.detected) throw new Error("opencode not detected");
+    if (!this.detected) await this.detect();
+    if (!this.detected) throw new Error("opencode not detected. Install opencode: npm i -g opencode");
     const sid = sessionId(randomUUID());
     this.sessions.set(sid as string, { pid: 0, alive: true });
     return { sessionId: sid, pid: 0 };
@@ -53,7 +55,7 @@ export class OpenCodeAdapter implements AgentAdapter, OrchestratorAdapter {
   async sendAndReceive(_handle: { sessionId: string }, message: string): Promise<AgentResponse> {
     try {
       const output = await this.runOpenCode(message);
-      return { kind: "message", content: output };
+      return buildResponse(output, message);
     } catch (error) {
       return { kind: "error", content: `opencode error: ${String(error)}` };
     }

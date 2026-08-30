@@ -8,7 +8,7 @@ export type AgentResponseKind =
   | "final_approved" | "final_rejected" | "error" | "timeout" | "crash";
 
 export interface AgentResponse { kind: AgentResponseKind; content: string; data?: Record<string, unknown>; }
-export interface OrchestratorConfig { task: string; cwd: string; maxRounds?: number; maxMinutes?: number; }
+export interface OrchestratorConfig { task: string; cwd: string; maxRounds?: number; maxMinutes?: number; onLog?: (msg: string) => void; }
 export interface OrchestratorEvent { type: string; state: ArenaState; agentId?: AgentId; data?: Record<string, unknown>; timestamp: string; }
 export interface OrchestratorResult { state: ArenaState; outcome: "consensus" | "timeout" | "error"; rounds: number; events: OrchestratorEvent[]; }
 
@@ -43,24 +43,25 @@ export class Orchestrator {
       this.emit("session.created");
       this.trans("initialize"); this.emit("session.initialized");
       this.hA = await this.adapterA.start({ task: this.config.task, cwd: this.config.cwd });
-      this.hB = await this.adapterB.start({ task: this.config.task, cwd: this.config.cwd });
-      this.trans("environment_checked");
-      this.emit("environment.checked");
+      this.hB = await this.adapterB.start({ task: this.config.task, cwd: this.config.cwd });      this.trans("environment_checked"); this.emit("environment.checked");
+      this.log("Both agents launched.");
 
       // 1. Independent analysis (analysis barrier: sequential, no sharing)
+      this.log("Agent A analyzing...");
       const rA1 = await this.adapterA.sendAndReceive(this.hA, "Independent analysis: " + this.config.task);
+      this.log("Agent B analyzing...");
       const rB1 = await this.adapterB.sendAndReceive(this.hB, "Independent analysis: " + this.config.task);
       this.trans("analysis_complete"); this.emit("analysis.started"); // ENVIRONMENT_CHECK -> ANALYZING
       this.trans("analysis_complete"); // ANALYZING -> DISCUSSING
       this.emit("analysis.complete", { agentA: rA1.content, agentB: rB1.content });
+      this.log("Analysis complete. Starting discussion...");
 
       // 2. Discussion (exchange analyses)
       await this.adapterA.sendAndReceive(this.hA, "Other analysis: " + rB1.content);
       await this.adapterB.sendAndReceive(this.hB, "Other analysis: " + rA1.content);
       await this.adapterA.sendAndReceive(this.hA, "Discuss and propose plan.");
-      await this.adapterB.sendAndReceive(this.hB, "Discuss and propose plan.");
-      this.trans("discussion_complete");
-      this.emit("discussion.complete");
+      await this.adapterB.sendAndReceive(this.hB, "Discuss and propose plan.");      this.trans("discussion_complete"); this.emit("discussion.complete");
+      this.log("Discussion complete. Requesting plan approval...");
 
       // 3. Plan approval
       const rAp = await this.adapterA.sendAndReceive(this.hA, "Approve plan? plan_approved or plan_rejected.");
@@ -71,6 +72,7 @@ export class Orchestrator {
       }
       this.trans("plan_approved");
       this.emit("plan.approved");
+      this.log("Plan approved! Starting build/review loop...");
 
       // 4. Builder/Reviewer loop
       const roles = this.manager.getRoles(this.sid);
@@ -115,6 +117,7 @@ export class Orchestrator {
       return this.result("consensus");
     } catch (error) {
       this.emit("error", { error: String(error) });
+      this.log("ERROR: " + String(error));
       return this.result("error");
     } finally {
       if (this.hA) await this.adapterA.terminate(this.hA).catch(() => {});
@@ -129,4 +132,5 @@ export class Orchestrator {
   private result(outcome: OrchestratorResult["outcome"]): OrchestratorResult {
     return { state: this.manager.getState(this.sid), outcome, rounds: this.events.filter(e => e.type === "round.started").length, events: [...this.events] };
   }
+  private log(msg: string) { this.config.onLog?.(msg); }
 }

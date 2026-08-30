@@ -35,6 +35,7 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   async start(_config: { task: string; cwd: string; env?: Record<string, string> }): Promise<AgentSessionHandle> {
+    if (!this.detected) await this.detect();
     if (!this.detected) {
       throw new Error("Claude CLI not detected. Run 'arena doctor' to diagnose.");
     }
@@ -70,7 +71,6 @@ export class ClaudeAdapter implements AgentAdapter {
     const info = this.paths.get(handle.sessionId);
     if (info) {
       info.alive = false;
-      this.paths.delete(handle.sessionId);
     }
   }
 

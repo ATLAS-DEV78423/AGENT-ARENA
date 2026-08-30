@@ -1,0 +1,24 @@
+C:\Users\Stanley\Documents\AGENTARENA\AGENTS(1).md
+C:\Users\Stanley\Documents\AGENTARENA\AGENTS.md
+C:\Users\Stanley\Documents\AGENTARENA\MISTAKES.md
+C:\Users\Stanley\Documents\AGENTARENA\README.md
+C:\Users\Stanley\Documents\AGENTARENA\docs\superpowers\plans\2026-08-30-arena-phase0.md
+C:\Users\Stanley\Documents\AGENTARENA\pnpm-workspace.yaml
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\AI_Agent_Arena_Complete_Development_Blueprint.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\MISTAKES.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\README.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-a\AGENT.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-a\strategy.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-a\tools.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-b\AGENT.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-b\strategy.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\agents\agent-b\tools.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\ARENA_CORE.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\DISCUSSION_PROTOCOL.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\GLOSSARY.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\IMPLEMENTATION_PROTOCOL.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\PLANNING_PROTOCOL.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\core\REVIEW_PROTOCOL.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\templates\agent-a.custom.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\Arena_Agent_Instruction_Pack\arena_agent_instructions\templates\agent-b.custom.md
+C:\Users\Stanley\Documents\AGENTARENA\reference md's\The Master Architect’s Guide to AGENTS.md_ Precision Instruction Engineering for AI Agents.md

@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { execSync } from "node:child_process";
 import { agentId } from "@arena/core";
 import { Orchestrator, FakeOrchestratorAdapter } from "@arena/core";
-import { OpenCodeAdapter } from "@arena/agents";
+import { OpenCodeAdapter, AgentRegistry } from "@arena/agents";
 
 const program = new Command();
 program.name("arena").description("Arena - competitive AI collaboration").version("0.1.0");
@@ -48,7 +48,7 @@ program.command("run <task>").description("Start Arena session with two AI agent
   }
   console.log("");
 
-  const orch = new Orchestrator({ task, cwd: process.cwd(), maxRounds: 2 }, agentA, agentB);
+  const orch = new Orchestrator({ task, cwd: process.cwd(), maxRounds: 2, onLog: (msg) => console.log("  [arena] " + msg) }, agentA, agentB);
   const result = await orch.run();
   console.log("");
   console.log("=== ARENA RESULT ===");
@@ -56,6 +56,29 @@ program.command("run <task>").description("Start Arena session with two AI agent
   console.log("Rounds: " + result.rounds);
   console.log("Final state: " + result.state);
   console.log("Events: " + result.events.length);
+  for (const e of result.events) {
+    const extra = e.data ? " " + JSON.stringify(e.data).slice(0, 200) : "";
+    console.log("  " + e.type + " " + e.state + extra);
+  }
+  console.log("");
+});
+
+program.command("agents").description("List detected agent adapters").action(async () => {
+  console.log("");
+  console.log("Detected Agents:");
+  console.log("");
+  const registry = new AgentRegistry();
+  registry.register(new OpenCodeAdapter("opencode/nemotron-3.5-lightning-free"));
+  registry.register(new OpenCodeAdapter("opencode/mimo-v2.5-free"));
+  const entries = await registry.detectAll();
+  if (entries.length === 0) {
+    console.log("  No agents registered.");
+  } else {
+    for (const e of entries) {
+      const status = e.detected ? "detected" : "not detected";
+      console.log("  " + e.adapter.id + " — " + e.adapter.name + " [" + status + "]");
+    }
+  }
   console.log("");
 });
 
