@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AgentId, AgentCapabilities, AgentStatus, SessionId, agentId, sessionId } from "@arena/core";
+import { AgentId, AgentCapabilities, AgentStatus, sessionId } from "@arena/core";
 import { AgentAdapter, DetectionResult, AgentSessionHandle } from "../adapter.js";
 
 export class FakeAgentAdapter implements AgentAdapter {
@@ -20,7 +20,7 @@ export class FakeAgentAdapter implements AgentAdapter {
     this.emit("[" + this.name + "] Ready. Task: " + config.task);
     return handle;
   }
-  async send(handle: AgentSessionHandle, message: string) {
+  async send(_handle: AgentSessionHandle, message: string) {
     if (this.stepIndex < this.steps.length) {
       const step = this.steps[this.stepIndex]!;
       if (message.toLowerCase().includes(step.trigger.toLowerCase())) {

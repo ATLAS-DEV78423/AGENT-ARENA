@@ -23,6 +23,5 @@ export class WorkspaceDetector {
     try { const r = execSync("git rev-parse --show-toplevel", { encoding: "utf-8", timeout: 5000, cwd: this.cwd }).trim(); return existsSync(r) ? r : null; } catch { return null; }
   }
   private getBranch(root: string): string | null { try { return execSync("git branch --show-current", { encoding: "utf-8", timeout: 5000, cwd: root }).trim(); } catch { return null; } }
-  private getGitStatus(root: string): string[] { try { const o = execSync("git status --porcelain", { encoding: "utf-8", timeout: 5000, cwd: root }).trim(); return o ? o.split("
-") : []; } catch { return []; } }
+  private getGitStatus(root: string): string[] { try { const o = execSync("git status --porcelain", { encoding: "utf-8", timeout: 5000, cwd: root }).trim(); return o ? o.split("\n") : []; } catch { return []; } }
 }

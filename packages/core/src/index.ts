@@ -6,3 +6,5 @@ export * from "./types/session.js";
 export * from "./errors/codes.js";
 export * from "./errors/arena-error.js";
 export * from "./state-machine.js";
+export * from "./session/manager.js";
+export * from "./session/budget.js";

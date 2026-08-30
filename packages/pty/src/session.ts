@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { OutputBuffer } from "./stream.js";
 
@@ -17,7 +17,7 @@ export function createProcessSession(opts: { command: string; args?: string[]; c
   const child = spawn(opts.command, opts.args ?? [], { cwd: opts.cwd ?? process.cwd(), env: { ...process.env, ...opts.env }, stdio: ["pipe", "pipe", "pipe"] });
   child.stdout?.on("data", (d: Buffer) => { const s = d.toString(); buffer.append(s); for (const cb of dataCbs) cb(s); });
   child.stderr?.on("data", (d: Buffer) => { const s = d.toString(); buffer.append(s); for (const cb of dataCbs) cb(s); });
-  child.on("exit", (code, signal) => { alive = false; for (const cb of exitCbs) cb(code ?? 1, signal ?? undefined); });
+  child.on("exit", (code, signal) => { alive = false; for (const cb of exitCbs) cb(code ?? 1, signal != null ? 0 : undefined); });
   return {
     sessionId: randomUUID(), pid: child.pid ?? 0,
     write: (d) => child.stdin?.write(d),

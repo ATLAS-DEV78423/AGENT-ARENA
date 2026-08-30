@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { AgentRegistry } from "./registry.js";
 import { AgentAdapter, DetectionResult } from "./adapter.js";
-import { agentId, AgentId, AgentStatus, AgentCapabilities, SessionId } from "@arena/core";
+import { agentId, AgentStatus, AgentCapabilities, SessionId } from "@arena/core";
 
 function mock(id: string, name: string, detected: boolean): AgentAdapter {
   return {
