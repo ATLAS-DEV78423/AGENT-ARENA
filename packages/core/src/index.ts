@@ -8,3 +8,5 @@ export * from "./errors/arena-error.js";
 export * from "./state-machine.js";
 export * from "./session/manager.js";
 export * from "./session/budget.js";
+export * from "./orchestrator.js";
+export * from "./fake-orchestrator-adapter.js";

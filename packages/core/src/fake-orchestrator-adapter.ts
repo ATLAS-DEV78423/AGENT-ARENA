@@ -25,7 +25,7 @@ export class FakeOrchestratorAdapter implements OrchestratorAdapter {
     ];
   }
 
-  async start(config: { task: string; cwd: string }) {
+  async start(_config: { task: string; cwd: string }) {
     return { sessionId: "fake-" + this.id, pid: 1234 };
   }
 

@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { Orchestrator } from "./orchestrator.js";
 import { FakeOrchestratorAdapter } from "./fake-orchestrator-adapter.js";
 import { agentId } from "./types/common.js";
-import { SessionManager } from "./session/manager.js";
 
 describe("Orchestrator - full protocol", () => {
   it("completes happy path: analysis -> discussion -> plan -> build/review -> consensus", async () => {
@@ -28,15 +27,14 @@ describe("Orchestrator - full protocol", () => {
     const orch = new Orchestrator({ task: "Build X", cwd: "/tmp" }, a, b);
     const result = await orch.run();
     expect(result.outcome).toBe("timeout");
-    expect(result.events.some(e => e.type === "plan.rejected" || e.state === "PLAN_REJECTED")).toBe(true);
+    expect(result.events.some(e => e.type === "plan.rejected" || e.state === "AWAITING_PLAN_APPROVAL")).toBe(true);
   });
 
   it("terminates agents after completion", async () => {
     const terminated: string[] = [];
     const a = new FakeOrchestratorAdapter(agentId("a"), "A");
     const b = new FakeOrchestratorAdapter(agentId("b"), "B");
-    const origTermA = a.terminate.bind(a);
-    a.terminate = async () => { terminated.push("A"); };
+        a.terminate = async () => { terminated.push("A"); };
     b.terminate = async () => { terminated.push("B"); };
     const orch = new Orchestrator({ task: "X", cwd: "/tmp" }, a, b);
     await orch.run();

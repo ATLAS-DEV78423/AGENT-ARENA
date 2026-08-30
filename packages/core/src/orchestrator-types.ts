@@ -1,4 +1,4 @@
-import { AgentId, SessionId } from "./types/common.js";
+import { AgentId } from "./types/common.js";
 import { ArenaState } from "./types/state-machine.js";
 
 export type AgentResponseType =
