@@ -11,3 +11,18 @@ export * from "./session/budget.js";
 export * from "./orchestrator.js";
 export * from "./fake-orchestrator-adapter.js";
 export * from "./persistence/event-store.js";
+export {
+  FINDING_STATES,
+  FINDING_TRANSITIONS,
+  FINDING_SEVERITIES,
+  transitionFinding,
+  type FindingState,
+  type FindingEvent,
+  type FindingSeverity,
+  type FindingTransition,
+  type Finding,
+  type CreateFindingParams,
+  createFinding as createFindingLifecycle,
+} from "./types/finding.js";
+export * from "./session/finding-manager.js";
+export * from "./session/deadlock-detector.js";
