@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { GenericAgentAdapter } from "./generic.js";
-import { agentId } from "@arena/core";
 
 // Simple echo agent for testing
 const ECHO_SCRIPT = `

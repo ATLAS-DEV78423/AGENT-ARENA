@@ -4,6 +4,7 @@ import {
   AgentCapabilities,
   AgentStatus,
   agentId,
+  sessionId,
   AgentResponse,
 } from "@arena/core";
 import { OrchestratorAdapter } from "@arena/core";
@@ -29,8 +30,6 @@ export class GenericAgentAdapter
   readonly name: string;
   private config: GenericAgentConfig;
   private ptyAdapter: PtyAgentAdapter;
-  private detected = false;
-
   constructor(config: GenericAgentConfig) {
     this.config = config;
     this.id = agentId(config.id);
@@ -51,14 +50,12 @@ export class GenericAgentAdapter
         { timeout: 5000 },
         (err, stdout) => {
           if (err) {
-            this.detected = false;
             resolve({
               detected: false,
               command: this.config.command,
             });
             return;
           }
-          this.detected = true;
           resolve({
             detected: true,
             command: this.config.command,
@@ -73,7 +70,8 @@ export class GenericAgentAdapter
     task: string;
     cwd: string;
   }): Promise<AgentSessionHandle> {
-    return this.ptyAdapter.start(config);
+    const handle = await this.ptyAdapter.start(config);
+    return { sessionId: sessionId(handle.sessionId), pid: handle.pid };
   }
 
   async sendAndReceive(

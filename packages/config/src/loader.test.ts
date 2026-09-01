@@ -8,9 +8,8 @@ describe("loadConfig", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = mkdirSync(join(tmpdir(), "arena-config-test-" + Date.now()), {
-      recursive: true,
-    });
+    dir = join(tmpdir(), "arena-config-test-" + Date.now());
+    mkdirSync(dir, { recursive: true });
   });
 
   afterEach(() => {
