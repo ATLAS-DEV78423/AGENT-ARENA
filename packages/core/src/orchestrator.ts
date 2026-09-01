@@ -1,22 +1,90 @@
-import { SessionId, AgentId } from "./types/common.js";
+import { SessionId, AgentId, Timestamp, now } from "./types/common.js";
 import { ArenaState } from "./types/state-machine.js";
 import { SessionManager } from "./session/manager.js";
+import { FindingManager } from "./session/finding-manager.js";
+import { DeadlockDetector } from "./session/deadlock-detector.js";
+import { FindingSeverity, CreateFindingParams } from "./types/finding.js";
+import { EventStore } from "./persistence/event-store.js";
 
 export type AgentResponseKind =
-  | "analysis" | "message" | "plan_approved" | "plan_rejected"
-  | "finding" | "review_approved" | "review_rejected"
-  | "final_approved" | "final_rejected" | "error" | "timeout" | "crash";
+  | "analysis"
+  | "message"
+  | "plan_approved"
+  | "plan_rejected"
+  | "finding"
+  | "review_approved"
+  | "review_rejected"
+  | "final_approved"
+  | "final_rejected"
+  | "error"
+  | "timeout"
+  | "crash";
 
-export interface AgentResponse { kind: AgentResponseKind; content: string; data?: Record<string, unknown>; }
-export interface OrchestratorConfig { task: string; cwd: string; maxRounds?: number; maxMinutes?: number; onLog?: (msg: string) => void; }
-export interface OrchestratorEvent { type: string; state: ArenaState; agentId?: AgentId; data?: Record<string, unknown>; timestamp: string; }
-export interface OrchestratorResult { state: ArenaState; outcome: "consensus" | "timeout" | "error"; rounds: number; events: OrchestratorEvent[]; }
+export interface AgentResponse {
+  kind: AgentResponseKind;
+  content: string;
+  data?: Record<string, unknown>;
+}
+
+export interface OrchestratorConfig {
+  task: string;
+  cwd: string;
+  maxRounds?: number;
+  maxMinutes?: number;
+  maxRepeatedObjections?: number;
+  onLog?: (msg: string) => void;
+}
+
+export interface OrchestratorEvent {
+  type: string;
+  state: ArenaState;
+  agentId?: AgentId;
+  data?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface OrchestratorResult {
+  sessionId: SessionId;
+  state: ArenaState;
+  outcome: "consensus" | "timeout" | "error";
+  rounds: number;
+  events: OrchestratorEvent[];
+}
 
 export interface OrchestratorAdapter {
-  id: AgentId; name: string;
-  start(config: { task: string; cwd: string }): Promise<{ sessionId: string; pid: number }>;
-  sendAndReceive(handle: { sessionId: string }, message: string): Promise<AgentResponse>;
+  id: AgentId;
+  name: string;
+  start(config: { task: string; cwd: string }): Promise<{
+    sessionId: string;
+    pid: number;
+  }>;
+  sendAndReceive(
+    handle: { sessionId: string },
+    message: string,
+  ): Promise<AgentResponse>;
   terminate(handle: { sessionId: string }): Promise<void>;
+}
+
+function parseFindingFromResponse(
+  content: string,
+  agentId: AgentId,
+): CreateFindingParams {
+  const lower = content.toLowerCase();
+  let severity: FindingSeverity = "major";
+  if (/\b(blocker|critical|showstopper|severe)\b/.test(lower))
+    severity = "blocker";
+  else if (/\b(minor|cosmetic|style|nit)\b/.test(lower)) severity = "minor";
+  else if (/\b(note|info|fyi)\b/.test(lower)) severity = "note";
+
+  return {
+    severity,
+    category: "general",
+    claim: content,
+    evidence: "",
+    impact: "",
+    fix: "",
+    createdBy: agentId,
+  };
 }
 
 export class Orchestrator {
@@ -24,51 +92,177 @@ export class Orchestrator {
   private adapterA: OrchestratorAdapter;
   private adapterB: OrchestratorAdapter;
   private manager: SessionManager;
+  private eventStore: EventStore | null;
+  private findingManager: FindingManager;
+  private deadlockDetector: DeadlockDetector;
   private events: OrchestratorEvent[] = [];
   private hA: { sessionId: string } | null = null;
   private hB: { sessionId: string } | null = null;
   private sid!: SessionId;
 
-  constructor(config: OrchestratorConfig, a: OrchestratorAdapter, b: OrchestratorAdapter, mgr?: SessionManager) {
-    this.config = config; this.adapterA = a; this.adapterB = b; this.manager = mgr ?? new SessionManager();
+  constructor(
+    config: OrchestratorConfig,
+    a: OrchestratorAdapter,
+    b: OrchestratorAdapter,
+    mgr?: SessionManager,
+    eventStore?: EventStore,
+  ) {
+    this.config = config;
+    this.adapterA = a;
+    this.adapterB = b;
+    this.manager = mgr ?? new SessionManager();
+    this.eventStore = eventStore ?? null;
+    this.findingManager = new FindingManager();
+    this.deadlockDetector = new DeadlockDetector(
+      this.config.maxRepeatedObjections ?? 2,
+    );
   }
 
   async run(): Promise<OrchestratorResult> {
     try {
       const s = await this.manager.createSession({
-        task: this.config.task, agentA: this.adapterA.id, agentB: this.adapterB.id,
-        budget: { maxRounds: this.config.maxRounds ?? 3, maxMinutes: this.config.maxMinutes ?? 10 },
+        task: this.config.task,
+        agentA: this.adapterA.id,
+        agentB: this.adapterB.id,
+        budget: {
+          maxRounds: this.config.maxRounds ?? 3,
+          maxMinutes: this.config.maxMinutes ?? 10,
+        },
       });
       this.sid = s.id;
+
       this.emit("session.created");
-      this.trans("initialize"); this.emit("session.initialized");
-      this.hA = await this.adapterA.start({ task: this.config.task, cwd: this.config.cwd });
-      this.hB = await this.adapterB.start({ task: this.config.task, cwd: this.config.cwd });      this.trans("environment_checked"); this.emit("environment.checked");
+      this.trans("initialize");
+      this.emit("session.initialized");
+
+      this.hA = await this.adapterA.start({
+        task: this.config.task,
+        cwd: this.config.cwd,
+      });
+      this.hB = await this.adapterB.start({
+        task: this.config.task,
+        cwd: this.config.cwd,
+      });
+      this.trans("environment_checked");
+      this.emit("environment.checked");
       this.log("Both agents launched.");
 
-      // 1. Independent analysis (analysis barrier: sequential, no sharing)
+      // 1. Independent analysis
       this.log("Agent A analyzing...");
-      const rA1 = await this.adapterA.sendAndReceive(this.hA, "Independent analysis: " + this.config.task);
+      const rA1 = await this.adapterA.sendAndReceive(
+        this.hA,
+        "Independent analysis: " + this.config.task,
+      );
       this.log("Agent B analyzing...");
-      const rB1 = await this.adapterB.sendAndReceive(this.hB, "Independent analysis: " + this.config.task);
-      this.trans("analysis_complete"); this.emit("analysis.started"); // ENVIRONMENT_CHECK -> ANALYZING
-      this.trans("analysis_complete"); // ANALYZING -> DISCUSSING
-      this.emit("analysis.complete", { agentA: rA1.content, agentB: rB1.content });
+      const rB1 = await this.adapterB.sendAndReceive(
+        this.hB,
+        "Independent analysis: " + this.config.task,
+      );
+      this.trans("analysis_complete");
+      this.emit("analysis.started");
+      this.trans("analysis_complete");
+      this.emit("analysis.complete", {
+        agentA: rA1.content,
+        agentB: rB1.content,
+      });
       this.log("Analysis complete. Starting discussion...");
 
-      // 2. Discussion (exchange analyses)
-      await this.adapterA.sendAndReceive(this.hA, "Other analysis: " + rB1.content);
-      await this.adapterB.sendAndReceive(this.hB, "Other analysis: " + rA1.content);
-      await this.adapterA.sendAndReceive(this.hA, "Discuss and propose plan.");
-      await this.adapterB.sendAndReceive(this.hB, "Discuss and propose plan.");      this.trans("discussion_complete"); this.emit("discussion.complete");
+      // 2. Discussion — structured events
+      await this.adapterA.sendAndReceive(
+        this.hA,
+        "Other analysis: " + rB1.content,
+      );
+      const discA = await this.adapterA.sendAndReceive(
+        this.hA,
+        "Discuss and propose plan.",
+      );
+      this.emit(
+        "message.created",
+        { messageType: "DISCUSSION", content: discA.content },
+        this.adapterA.id,
+      );
+
+      await this.adapterB.sendAndReceive(
+        this.hB,
+        "Other analysis: " + rA1.content,
+      );
+      const discB = await this.adapterB.sendAndReceive(
+        this.hB,
+        "Discuss and propose plan.",
+      );
+      this.emit(
+        "message.created",
+        { messageType: "DISCUSSION", content: discB.content },
+        this.adapterB.id,
+      );
+
+      // Record discussion-phase objections for deadlock detection
+      if (discA.kind === "plan_rejected") {
+        this.deadlockDetector.recordObjection({
+          agentId: this.adapterA.id,
+          claim: discA.content,
+          evidence: "",
+          timestamp: now() as Timestamp,
+          round: 0,
+        });
+      }
+      if (discB.kind === "plan_rejected") {
+        this.deadlockDetector.recordObjection({
+          agentId: this.adapterB.id,
+          claim: discB.content,
+          evidence: "",
+          timestamp: now() as Timestamp,
+          round: 0,
+        });
+      }
+
+      this.trans("discussion_complete");
+      this.emit("discussion.complete");
       this.log("Discussion complete. Requesting plan approval...");
 
       // 3. Plan approval
-      const rAp = await this.adapterA.sendAndReceive(this.hA, "Approve plan? plan_approved or plan_rejected.");
-      const rBp = await this.adapterB.sendAndReceive(this.hB, "Approve plan? plan_approved or plan_rejected.");
+      const rAp = await this.adapterA.sendAndReceive(
+        this.hA,
+        "Approve plan? plan_approved or plan_rejected.",
+      );
+      const rBp = await this.adapterB.sendAndReceive(
+        this.hB,
+        "Approve plan? plan_approved or plan_rejected.",
+      );
       this.trans("plan_submitted");
+
+      if (rAp.kind === "plan_rejected") {
+        this.deadlockDetector.recordObjection({
+          agentId: this.adapterA.id,
+          claim: rAp.content,
+          evidence: "",
+          timestamp: now() as Timestamp,
+          round: 0,
+        });
+      }
+      if (rBp.kind === "plan_rejected") {
+        this.deadlockDetector.recordObjection({
+          agentId: this.adapterB.id,
+          claim: rBp.content,
+          evidence: "",
+          timestamp: now() as Timestamp,
+          round: 0,
+        });
+      }
+
+      if (this.deadlockDetector.isDeadlock()) {
+        this.emit("dispute.opened", {
+          reason: "Repeated objections without resolution",
+        });
+        this.log("Deadlock detected — escalating to user.");
+        this.trans("plan_rejected");
+        return this.result("timeout");
+      }
+
       if (rAp.kind !== "plan_approved" || rBp.kind !== "plan_approved") {
-        this.trans("plan_rejected"); this.emit("plan.rejected"); return this.result("timeout");
+        this.trans("plan_rejected");
+        this.emit("plan.rejected");
+        return this.result("timeout");
       }
       this.trans("plan_approved");
       this.emit("plan.approved");
@@ -76,44 +270,105 @@ export class Orchestrator {
 
       // 4. Builder/Reviewer loop
       const roles = this.manager.getRoles(this.sid);
-      let builder = roles[0]!.role === "Builder" ? this.adapterA : this.adapterB;
+      let builder =
+        roles[0]!.role === "Builder" ? this.adapterA : this.adapterB;
       let builderH = builder === this.adapterA ? this.hA : this.hB;
-      let reviewer = builder === this.adapterA ? this.adapterB : this.adapterA;
+      let reviewer =
+        builder === this.adapterA ? this.adapterB : this.adapterA;
       let reviewerH = reviewer === this.adapterA ? this.hA : this.hB;
       let isFirstRound = true;
 
-      for (let round = 0; round < (this.config.maxRounds ?? 3); round++) {
+      for (
+        let round = 0;
+        round < (this.config.maxRounds ?? 3);
+        round++
+      ) {
         if (isFirstRound) {
           isFirstRound = false;
-          // Already in IMPLEMENTING after plan_approved
         } else {
           this.trans("implementation_started");
         }
-        this.emit("round.started", { round: round + 1, builder: builder.id, reviewer: reviewer.id });
+        this.emit("round.started", {
+          round: round + 1,
+          builder: builder.id,
+          reviewer: reviewer.id,
+        });
         await builder.sendAndReceive(builderH!, "Implement the plan.");
         this.trans("implementation_completed");
 
-        this.emit("review.started");
-        const rev = await reviewer.sendAndReceive(reviewerH!, "Review. reply review_approved or finding.");
-        this.trans("review_completed");
+        this.emit("review.started", undefined, reviewer.id);
+        const rev = await reviewer.sendAndReceive(
+          reviewerH!,
+          "Review the implementation.",
+        );
 
         if (rev.kind === "review_approved") {
+          this.trans("review_completed");
           this.trans("verification_passed");
-          const fA = await this.adapterA.sendAndReceive(this.hA!, "Final approval? final_approved.");
-          const fB = await this.adapterB.sendAndReceive(this.hB!, "Final approval? final_approved.");
-          if (fA.kind === "final_approved" && fB.kind === "final_approved") {
-            this.trans("final_review_passed"); this.trans("consensus_reached");
-            this.emit("consensus.reached"); return this.result("consensus");
+
+          const fA = await this.adapterA.sendAndReceive(
+            this.hA!,
+            "Final approval? final_approved.",
+          );
+          const fB = await this.adapterB.sendAndReceive(
+            this.hB!,
+            "Final approval? final_approved.",
+          );
+          if (
+            fA.kind === "final_approved" && fB.kind === "final_approved"
+          ) {
+            this.trans("final_review_passed");
+            this.trans("consensus_reached");
+            this.emit("consensus.reached");
+            return this.result("consensus");
           }
-          this.trans("role_switched");
+          // Not final — continue to next round
+          this.trans("implementation_started");
         } else {
-          this.trans("findings_presented"); this.emit("findings.presented"); this.trans("findings_resolved"); this.trans("verification_passed");
-          this.trans("role_switched");
+          // findings_presented from REVIEWING → REVISING (not review_completed first)
+          this.trans("findings_presented");
+
+          const finding = this.findingManager.create(
+            parseFindingFromResponse(rev.content, reviewer.id),
+          );
+          this.emit(
+            "finding.created",
+            {
+              findingId: finding.id,
+              severity: finding.severity,
+              claim: finding.claim,
+            },
+            reviewer.id,
+          );
+          this.log(
+            "Reviewer found: " +
+              finding.severity +
+              " — " +
+              finding.claim.slice(0, 100),
+          );
+
+          // Builder resolves findings
+          await builder.sendAndReceive(
+            builderH!,
+            "Fix these findings:\n" + rev.content,
+          );
+          this.findingManager.transition(finding.id, "acknowledge");
+          this.findingManager.transition(finding.id, "accept");
+          this.findingManager.transition(finding.id, "fix");
+
+          this.trans("findings_resolved");
+          this.trans("verification_passed");
+          if (round < (this.config.maxRounds ?? 3) - 1) {
+            this.trans("implementation_started");
+          }
         }
+
         [builder, reviewer] = [reviewer, builder];
         [builderH, reviewerH] = [reviewerH, builderH];
       }
-      this.trans("final_review_passed"); this.trans("consensus_reached");
+
+      this.trans("final_review_passed");
+      this.trans("consensus_reached");
       return this.result("consensus");
     } catch (error) {
       this.emit("error", { error: String(error) });
@@ -125,12 +380,48 @@ export class Orchestrator {
     }
   }
 
-  private trans(event: string) { this.manager.transition(this.sid, event as any); }
-  private emit(type: string, data?: Record<string, unknown>) {
-    this.events.push({ type, state: this.manager.getState(this.sid), data, timestamp: new Date().toISOString() });
+  private trans(event: string) {
+    this.manager.transition(this.sid, event as any);
   }
-  private result(outcome: OrchestratorResult["outcome"]): OrchestratorResult {
-    return { state: this.manager.getState(this.sid), outcome, rounds: this.events.filter(e => e.type === "round.started").length, events: [...this.events] };
+
+  private emit(
+    type: string,
+    data?: Record<string, unknown>,
+    agentId?: AgentId,
+  ) {
+    const ts = now();
+    const event: OrchestratorEvent = {
+      type,
+      state: this.manager.getState(this.sid),
+      agentId,
+      data,
+      timestamp: ts,
+    };
+    this.events.push(event);
+    if (this.eventStore) {
+      this.eventStore.append(this.sid as string, {
+        type: event.type,
+        state: event.state,
+        timestamp: ts,
+        agentId: event.agentId as string | undefined,
+        data: event.data,
+      });
+    }
   }
-  private log(msg: string) { this.config.onLog?.(msg); }
+
+  private result(
+    outcome: OrchestratorResult["outcome"],
+  ): OrchestratorResult {
+    return {
+      sessionId: this.sid,
+      state: this.manager.getState(this.sid),
+      outcome,
+      rounds: this.events.filter((e) => e.type === "round.started").length,
+      events: [...this.events],
+    };
+  }
+
+  private log(msg: string) {
+    this.config.onLog?.(msg);
+  }
 }
