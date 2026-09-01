@@ -30,22 +30,27 @@ export function stripDelimiters(
 
   if (startIdx !== -1 && endIdx !== -1) {
     const before = output.slice(0, startIdx);
-    // Strip leading newline after start delimiter and trailing newline before end delimiter
-    const rawContent = output.slice(
+    const content = output.slice(
       startIdx + startPattern.length,
       endIdx,
     );
-    const content = rawContent.replace(/^\n/, "").replace(/\n$/, "");
     const after = output.slice(endIdx + delimiters.end.length);
     return before + content + after;
   }
 
-  // Fallback: strip delimiters without newline handling
+  // Fallback: strip end delimiter from beginning and end of output
   let result = output;
-  const si = result.indexOf(delimiters.start);
-  if (si !== -1) result = result.slice(si + delimiters.start.length);
-  const ei = result.indexOf(delimiters.end);
-  if (ei !== -1)
-    result = result.slice(0, ei) + result.slice(ei + delimiters.end.length);
+  if (result.startsWith(delimiters.end)) {
+    result = result.slice(delimiters.end.length);
+  }
+  // Strip leading newline after start delimiter
+  if (result.startsWith("\n")) {
+    result = result.slice(1);
+  }
+  // Strip trailing newline before checking end delimiter
+  const trimmed = result.replace(/\n+$/, "");
+  if (trimmed.endsWith(delimiters.end)) {
+    result = trimmed.slice(0, -delimiters.end.length);
+  }
   return result;
 }

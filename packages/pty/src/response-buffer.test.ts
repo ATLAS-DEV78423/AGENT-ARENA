@@ -22,8 +22,8 @@ describe("ResponseBuffer", () => {
     expect(buf.getRaw()).toBe("hello world");
   });
 
-  it("detects complete response when end delimiter arrives", () => {
-    buf.append("some output\n");
+  it("detects complete response when two end delimiters arrive", () => {
+    buf.append(`${delim.end}\nsome output\n`);
     expect(buf.hasCompleteResponse()).toBe(false);
     buf.append(`${delim.end}\n`);
     expect(buf.hasCompleteResponse()).toBe(true);
@@ -44,7 +44,7 @@ describe("ResponseBuffer", () => {
 
   it("handles partial delimiter across chunks", () => {
     const partial = delim.end.slice(0, 5);
-    buf.append(`data\n${partial}`);
+    buf.append(`${delim.end}\ndata\n${partial}`);
     expect(buf.hasCompleteResponse()).toBe(false);
     buf.append(`${delim.end.slice(5)}\n`);
     expect(buf.hasCompleteResponse()).toBe(true);

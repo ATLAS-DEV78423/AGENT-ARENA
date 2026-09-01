@@ -17,7 +17,15 @@ export class ResponseBuffer {
   }
 
   hasCompleteResponse(): boolean {
-    return findDelimiter(this.raw, this.delimiter.end);
+    // Require the end delimiter to appear twice (once as prefix, once as suffix)
+    // to avoid false positives when only the opening delimiter has arrived
+    const first = this.raw.indexOf(this.delimiter.end);
+    if (first === -1) return false;
+    const afterFirst = this.raw.indexOf(
+      this.delimiter.end,
+      first + this.delimiter.end.length,
+    );
+    return afterFirst !== -1;
   }
 
   consumeResponse(): string {
