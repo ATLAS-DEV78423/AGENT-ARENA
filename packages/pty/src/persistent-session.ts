@@ -32,7 +32,11 @@ export class PersistentSession {
 
     const opts: SpawnOptions = {
       cwd: config.cwd ?? process.cwd(),
-      env: { ...process.env, ...config.env },
+      env: {
+        ...process.env,
+        ARENA_DELIM: delimiter.end,
+        ...config.env,
+      },
       stdio: ["pipe", "pipe", "pipe"],
     };
 
@@ -105,10 +109,14 @@ export class PersistentSession {
     if (!this.buffer.hasCompleteResponse()) return;
 
     const response = this.buffer.consumeResponse();
+    this.resolvePending(response);
+  }
+
+  private resolvePending(response: string): void {
     const resolve = this.waitingResolve;
     this.waitingResolve = null;
     this.waitingReject = null;
-    resolve(response);
+    resolve?.(response);
   }
 
   isAlive(): boolean {
