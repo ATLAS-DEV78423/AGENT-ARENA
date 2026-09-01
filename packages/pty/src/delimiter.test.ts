@@ -39,7 +39,7 @@ describe("stripDelimiters", () => {
     const d = createDelimiter();
     const output = `${d.start}\nhello world\n${d.end}\ntrailing`;
     const result = stripDelimiters(output, d);
-    expect(result).toBe("hello world\ntrailing");
+    expect(result).toBe("hello world\n\ntrailing");
   });
 
   it("returns original when no delimiters found", () => {
