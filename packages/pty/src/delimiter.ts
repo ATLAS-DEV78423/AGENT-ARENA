@@ -21,10 +21,7 @@ export function stripDelimiters(
   output: string,
   delimiters: DelimiterPair,
 ): string {
-  // Find content between start and end delimiters, stripping associated newlines
   const startPattern = delimiters.start + "\n";
-  const endPattern = "\n" + delimiters.end;
-
   const startIdx = output.indexOf(startPattern);
   const endIdx = output.indexOf(delimiters.end);
 

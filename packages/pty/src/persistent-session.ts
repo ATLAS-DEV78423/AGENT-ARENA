@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import {
   DelimiterPair,
   createDelimiter,
-  findDelimiter,
 } from "./delimiter.js";
 import { ResponseBuffer } from "./response-buffer.js";
 
@@ -22,7 +21,7 @@ export class PersistentSession {
   private buffer: ResponseBuffer;
   private alive = true;
   private waitingResolve: ((value: string) => void) | null = null;
-  private waitingReject: ((reason: Error) => void) | null = null;
+
   private exitCallbacks: Array<() => void> = [];
 
   constructor(config: PersistentSessionConfig) {
@@ -81,7 +80,6 @@ export class PersistentSession {
       }
 
       this.waitingResolve = resolve;
-      this.waitingReject = reject;
 
       // Check if response already arrived
       this.resolveIfReady();
@@ -90,7 +88,6 @@ export class PersistentSession {
         const timer = setTimeout(() => {
           if (this.waitingResolve) {
             this.waitingResolve = null;
-            this.waitingReject = null;
             reject(new Error("timeout"));
           }
         }, timeoutMs);
@@ -115,7 +112,6 @@ export class PersistentSession {
   private resolvePending(response: string): void {
     const resolve = this.waitingResolve;
     this.waitingResolve = null;
-    this.waitingReject = null;
     resolve?.(response);
   }
 

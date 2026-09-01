@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@arena/core": "workspace:*"
+    "@arena/core": "workspace:*",
+    "@arena/pty": "workspace:*"
   }
 }

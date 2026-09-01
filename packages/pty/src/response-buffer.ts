@@ -1,6 +1,5 @@
 import {
   DelimiterPair,
-  findDelimiter,
   stripDelimiters,
 } from "./delimiter.js";
 
