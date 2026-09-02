@@ -49,10 +49,11 @@ program
   .option("--model-a <model>", "Model for Agent A")
   .option("--model-b <model>", "Model for Agent B")
   .option("--rounds <n>", "Max rounds", "5")
+  .option("--security <profile>", "Security profile: inherit, restricted, isolated")
   .action(
     async (
       task: string,
-      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string },
+      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string; security?: string },
     ) => {
       const cwd = process.cwd();
       const config = await loadConfig(cwd);
@@ -93,6 +94,7 @@ program
       console.log("");
 
       const maxRounds = parseInt(opts.rounds, 10) || config.debate.maxRounds;
+      const securityProfile = (opts.security ?? config.security.profile) as "inherit" | "restricted" | "isolated";
       const orch = new Orchestrator(
         {
           task,
@@ -100,6 +102,7 @@ program
           maxRounds,
           maxMinutes: config.debate.maxMinutes,
           maxRepeatedObjections: config.debate.maxRepeatedObjections,
+          security: { profile: securityProfile },
           onLog: (msg) => console.log("  " + msg),
         },
         agentA,
