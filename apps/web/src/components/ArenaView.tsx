@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export function ArenaView() {
+export function ArenaView({ onBack }: { onBack: () => void }) {
   const { agents, selectedAgentIds, toggleAgent, startArena } = useStore();
   const [prompt, setPrompt] = useState("");
 
@@ -20,6 +20,9 @@ export function ArenaView() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-0 p-8">
       <div className="max-w-lg w-full text-center">
+        <button onClick={onBack} className="flex items-center gap-1 text-text-muted text-xs mb-4 hover:text-text-secondary transition-colors">
+          <ArrowLeft className="w-3 h-3" /> Back
+        </button>
         <span className="text-3xl text-jade/60 mb-6 block">◈</span>
         <h2 className="text-lg font-light text-text-primary mb-1">Arena</h2>
         <p className="text-sm text-text-muted mb-8">Send one prompt to multiple agents. Compare. Decide.</p>

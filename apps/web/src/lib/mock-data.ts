@@ -1,29 +1,6 @@
-export interface Agent {
-  id: string;
-  name: string;
-  provider: string;
-  status: "online" | "offline" | "thinking";
-  model?: string;
-}
+import { Agent, Session } from "./types";
 
-export interface Message {
-  id: string;
-  role: "user" | "agent" | "arena" | "judge";
-  agentId?: string;
-  agentName?: string;
-  content: string;
-  timestamp: Date;
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  type: "chat" | "arena";
-  agents: string[];
-  messages: Message[];
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type { Agent, Message, Session } from "./types";
 
 export const AGENTS: Agent[] = [
   { id: "arena", name: "Arena", provider: "Multi-agent", status: "online" },

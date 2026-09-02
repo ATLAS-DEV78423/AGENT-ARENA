@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
@@ -11,9 +12,7 @@ import { Settings } from "@/components/Settings";
 
 export default function Home() {
   const activeSessionId = useStore((s) => s.activeSessionId);
-  const sessions = useStore((s) => s.sessions);
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const isArenaSession = activeSession?.type === "arena";
+  const [showArena, setShowArena] = useState(false);
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -23,12 +22,12 @@ export default function Home() {
         <Sidebar />
 
         <main className="flex-1 flex flex-col min-h-0 min-w-0">
-          {!activeSessionId ? (
-            <EmptyState />
-          ) : isArenaSession ? (
+          {activeSessionId ? (
             <ChatView />
+          ) : showArena ? (
+            <ArenaView onBack={() => setShowArena(false)} />
           ) : (
-            <ChatView />
+            <EmptyState onStartArena={() => setShowArena(true)} />
           )}
         </main>
       </div>
