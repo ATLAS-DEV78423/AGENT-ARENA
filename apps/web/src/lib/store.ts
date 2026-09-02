@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Agent, Message, Session, AGENTS, MOCK_SESSIONS, ARENA_RESPONSES } from "./mock-data";
+import { Agent, Message, Session, AGENTS, MOCK_SESSIONS } from "./mock-data";
 
 interface ArenaStore {
   agents: Agent[];
@@ -13,7 +13,7 @@ interface ArenaStore {
   setActiveSession: (id: string | null) => void;
   toggleAgent: (id: string) => void;
   sendMessage: (content: string) => void;
-  startArena: (agentIds: string[], prompt: string) => void;
+  startArena: (agentIds: string[], prompt: string) => Promise<void>;
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   openSettings: () => void;
@@ -38,7 +38,7 @@ export const useStore = create<ArenaStore>((set, get) => ({
     })),
 
   sendMessage: (content) => {
-    const { activeSessionId, sessions } = get();
+    const { activeSessionId } = get();
     if (!activeSessionId) return;
 
     set((state) => ({
@@ -60,34 +60,12 @@ export const useStore = create<ArenaStore>((set, get) => ({
           : s
       ),
     }));
-
-    // Simulate agent response
-    setTimeout(() => {
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === activeSessionId
-            ? {
-                ...s,
-                messages: [
-                  ...s.messages,
-                  {
-                    id: `m-${Date.now()}-response`,
-                    role: "agent" as const,
-                    agentId: "claude",
-                    agentName: "Claude",
-                    content: "I've analyzed your request. Here's my response based on the context of our conversation. Let me know if you'd like me to elaborate on any specific point.",
-                    timestamp: new Date(),
-                  },
-                ],
-              }
-            : s
-        ),
-      }));
-    }, 1500);
   },
 
-  startArena: (agentIds, prompt) => {
+  startArena: async (agentIds, prompt) => {
     const sessionId = `arena-${Date.now()}`;
+
+    // Create session immediately with user message
     const newSession: Session = {
       id: sessionId,
       title: prompt.slice(0, 50) + (prompt.length > 50 ? "..." : ""),
@@ -110,16 +88,119 @@ export const useStore = create<ArenaStore>((set, get) => ({
       activeSessionId: sessionId,
     }));
 
-    // Simulate streaming arena responses
-    const agentNames: Record<string, string> = {
-      claude: "Claude",
-      gpt: "GPT",
-      gemini: "Gemini",
-    };
+    try {
+      const response = await fetch("/api/arena", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: agentIds, prompt }),
+      });
 
-    agentIds.forEach((agentId, idx) => {
+      if (!response.ok) throw new Error("Failed to start arena");
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const { event, data } = JSON.parse(line.slice(6));
+
+              if (event === "message") {
+                const agentNames: Record<string, string> = {
+                  claude: "Claude",
+                  gpt: "GPT",
+                  gemini: "Gemini",
+                  qwen: "Qwen",
+                };
+
+                set((state) => ({
+                  sessions: state.sessions.map((s) =>
+                    s.id === sessionId
+                      ? {
+                          ...s,
+                          messages: [
+                            ...s.messages,
+                            {
+                              id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                              role: data.role as "arena" | "judge",
+                              agentId: data.agentId,
+                              agentName: agentNames[data.agentId] || data.agentId || data.role,
+                              content: data.content,
+                              timestamp: new Date(),
+                            },
+                          ],
+                        }
+                      : s
+                  ),
+                }));
+              }
+
+              if (event === "session.completed") {
+                set((state) => ({
+                  sessions: state.sessions.map((s) =>
+                    s.id === sessionId
+                      ? { ...s, updatedAt: new Date() }
+                      : s
+                  ),
+                }));
+              }
+
+              if (event === "error") {
+                console.error("Arena error:", data);
+              }
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Arena request failed:", error);
+      // Fall back to mock responses
+      const { ARENA_RESPONSES } = await import("./mock-data");
+      const agentNames: Record<string, string> = {
+        claude: "Claude",
+        gpt: "GPT",
+        gemini: "Gemini",
+      };
+
+      agentIds.forEach((agentId, idx) => {
+        setTimeout(() => {
+          set((state) => ({
+            sessions: state.sessions.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    messages: [
+                      ...s.messages,
+                      {
+                        id: `m-${Date.now()}-${agentId}`,
+                        role: "arena" as const,
+                        agentId,
+                        agentName: agentNames[agentId] || agentId,
+                        content: ARENA_RESPONSES[agentId] || `Response from ${agentId}`,
+                        timestamp: new Date(),
+                      },
+                    ],
+                  }
+                : s
+            ),
+          }));
+        }, 2000 + idx * 1500);
+      });
+
       setTimeout(() => {
-        const content = ARENA_RESPONSES[agentId] || "Response from " + agentId;
         set((state) => ({
           sessions: state.sessions.map((s) =>
             s.id === sessionId
@@ -128,11 +209,11 @@ export const useStore = create<ArenaStore>((set, get) => ({
                   messages: [
                     ...s.messages,
                     {
-                      id: `m-${Date.now()}-${agentId}`,
-                      role: "arena" as const,
-                      agentId,
-                      agentName: agentNames[agentId] || agentId,
-                      content,
+                      id: `m-${Date.now()}-judge`,
+                      role: "judge" as const,
+                      agentId: "judge",
+                      agentName: "Judge",
+                      content: ARENA_RESPONSES.judge,
                       timestamp: new Date(),
                     },
                   ],
@@ -140,32 +221,8 @@ export const useStore = create<ArenaStore>((set, get) => ({
               : s
           ),
         }));
-      }, 2000 + idx * 1500);
-    });
-
-    // Simulate judge response after all agents
-    setTimeout(() => {
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                messages: [
-                  ...s.messages,
-                  {
-                    id: `m-${Date.now()}-judge`,
-                    role: "judge" as const,
-                    agentId: "judge",
-                    agentName: "Judge",
-                    content: ARENA_RESPONSES.judge,
-                    timestamp: new Date(),
-                  },
-                ],
-              }
-            : s
-        ),
-      }));
-    }, 2000 + agentIds.length * 1500 + 2000);
+      }, 2000 + agentIds.length * 1500 + 2000);
+    }
   },
 
   openCommandPalette: () => set({ commandPaletteOpen: true }),
