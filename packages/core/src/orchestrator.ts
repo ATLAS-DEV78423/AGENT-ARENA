@@ -15,6 +15,7 @@ import {
   finalApprovalPrompt,
 } from "./prompts.js";
 import { VerificationEngine } from "@arena/verification";
+import { SecurityGuard } from "@arena/policy";
 
 export type AgentResponseKind =
   | "analysis"
@@ -44,6 +45,9 @@ export interface OrchestratorConfig {
   maxRepeatedObjections?: number;
   verification?: {
     commands: Array<{ name: string; cmd: string; args?: string[]; timeoutMs?: number }>;
+  };
+  security?: {
+    profile: "inherit" | "restricted" | "isolated";
   };
   onLog?: (msg: string) => void;
 }
@@ -109,6 +113,7 @@ export class Orchestrator {
   private findingManager: FindingManager;
   private deadlockDetector: DeadlockDetector;
   private verificationEngine: VerificationEngine | null;
+  private securityGuard: SecurityGuard | null;
   private events: OrchestratorEvent[] = [];
   private hA: { sessionId: string } | null = null;
   private hB: { sessionId: string } | null = null;
@@ -132,6 +137,9 @@ export class Orchestrator {
     );
     this.verificationEngine = config.verification
       ? new VerificationEngine()
+      : null;
+    this.securityGuard = config.security
+      ? new SecurityGuard({ profile: config.security.profile, cwd: config.cwd })
       : null;
   }
 
@@ -435,12 +443,15 @@ export class Orchestrator {
     };
     this.events.push(event);
     if (this.eventStore) {
+      const redactedData = this.securityGuard && event.data
+        ? this.redactData(event.data)
+        : event.data;
       this.eventStore.append(this.sid as string, {
         type: event.type,
         state: event.state,
         timestamp: ts,
         agentId: event.agentId as string | undefined,
-        data: event.data,
+        data: redactedData,
       });
     }
   }
@@ -458,6 +469,19 @@ export class Orchestrator {
   }
 
   private log(msg: string) {
-    this.config.onLog?.(msg);
+    const redacted = this.securityGuard ? this.securityGuard.redactOutput(msg) : msg;
+    this.config.onLog?.(redacted);
+  }
+
+  private redactData(data: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "string") {
+        result[key] = this.securityGuard!.redactOutput(value);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
   }
 }
