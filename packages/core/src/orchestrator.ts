@@ -5,6 +5,15 @@ import { FindingManager } from "./session/finding-manager.js";
 import { DeadlockDetector } from "./session/deadlock-detector.js";
 import { FindingSeverity, CreateFindingParams } from "./types/finding.js";
 import { EventStore } from "./persistence/event-store.js";
+import {
+  analysisPrompt,
+  discussionPrompt,
+  planApprovalPrompt,
+  buildPrompt,
+  reviewPrompt,
+  fixPrompt,
+  finalApprovalPrompt,
+} from "./prompts.js";
 
 export type AgentResponseKind =
   | "analysis"
@@ -151,12 +160,12 @@ export class Orchestrator {
       this.log("Agent A analyzing...");
       const rA1 = await this.adapterA.sendAndReceive(
         this.hA,
-        "Independent analysis: " + this.config.task,
+        analysisPrompt(this.config.task),
       );
       this.log("Agent B analyzing...");
       const rB1 = await this.adapterB.sendAndReceive(
         this.hB,
-        "Independent analysis: " + this.config.task,
+        analysisPrompt(this.config.task),
       );
       this.trans("analysis_complete");
       this.emit("analysis.started");
@@ -168,13 +177,9 @@ export class Orchestrator {
       this.log("Analysis complete. Starting discussion...");
 
       // 2. Discussion — structured events
-      await this.adapterA.sendAndReceive(
-        this.hA,
-        "Other analysis: " + rB1.content,
-      );
       const discA = await this.adapterA.sendAndReceive(
         this.hA,
-        "Discuss and propose plan.",
+        discussionPrompt(rB1.content),
       );
       this.emit(
         "message.created",
@@ -182,13 +187,9 @@ export class Orchestrator {
         this.adapterA.id,
       );
 
-      await this.adapterB.sendAndReceive(
-        this.hB,
-        "Other analysis: " + rA1.content,
-      );
       const discB = await this.adapterB.sendAndReceive(
         this.hB,
-        "Discuss and propose plan.",
+        discussionPrompt(rA1.content),
       );
       this.emit(
         "message.created",
@@ -221,13 +222,14 @@ export class Orchestrator {
       this.log("Discussion complete. Requesting plan approval...");
 
       // 3. Plan approval
+      const planText = discA.kind === "plan_approved" ? discA.content : discB.content;
       const rAp = await this.adapterA.sendAndReceive(
         this.hA,
-        "Approve plan? plan_approved or plan_rejected.",
+        planApprovalPrompt(planText),
       );
       const rBp = await this.adapterB.sendAndReceive(
         this.hB,
-        "Approve plan? plan_approved or plan_rejected.",
+        planApprovalPrompt(planText),
       );
       this.trans("plan_submitted");
 
@@ -293,13 +295,16 @@ export class Orchestrator {
           builder: builder.id,
           reviewer: reviewer.id,
         });
-        await builder.sendAndReceive(builderH!, "Implement the plan.");
+        await builder.sendAndReceive(
+          builderH!,
+          buildPrompt(this.config.task, planText),
+        );
         this.trans("implementation_completed");
 
         this.emit("review.started", undefined, reviewer.id);
         const rev = await reviewer.sendAndReceive(
           reviewerH!,
-          "Review the implementation.",
+          reviewPrompt(this.config.task),
         );
 
         if (rev.kind === "review_approved") {
@@ -308,11 +313,11 @@ export class Orchestrator {
 
           const fA = await this.adapterA.sendAndReceive(
             this.hA!,
-            "Final approval? final_approved.",
+            finalApprovalPrompt(),
           );
           const fB = await this.adapterB.sendAndReceive(
             this.hB!,
-            "Final approval? final_approved.",
+            finalApprovalPrompt(),
           );
           if (
             fA.kind === "final_approved" && fB.kind === "final_approved"
@@ -350,7 +355,7 @@ export class Orchestrator {
           // Builder resolves findings
           await builder.sendAndReceive(
             builderH!,
-            "Fix these findings:\n" + rev.content,
+            fixPrompt(rev.content),
           );
           this.findingManager.transition(finding.id, "acknowledge");
           this.findingManager.transition(finding.id, "accept");

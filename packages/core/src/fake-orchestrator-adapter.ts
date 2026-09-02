@@ -15,13 +15,12 @@ export class FakeOrchestratorAdapter implements OrchestratorAdapter {
 
   static defaultSteps(): Array<{ trigger: string; response: AgentResponse }> {
     return [
-      { trigger: "Independent analysis", response: { kind: "analysis", content: "Analysis done." } },
-      { trigger: "Other analysis", response: { kind: "message", content: "I agree." } },
-      { trigger: "Discuss", response: { kind: "message", content: "Plan: incremental with tests." } },
-      { trigger: "Approve plan", response: { kind: "plan_approved", content: "Approved." } },
-      { trigger: "Implement the plan", response: { kind: "message", content: "Done." } },
-      { trigger: "Review the implementation", response: { kind: "review_approved", content: "Looks good." } },
-      { trigger: "Final approval", response: { kind: "final_approved", content: "Final OK." } },
+      { trigger: "independently", response: { kind: "analysis", content: "Analysis done." } },
+      { trigger: "review their", response: { kind: "message", content: "I agree." } },
+      { trigger: "approve only", response: { kind: "plan_approved", content: "Approved." } },
+      { trigger: "current role: builder", response: { kind: "message", content: "Done." } },
+      { trigger: "current role: reviewer", response: { kind: "review_approved", content: "Looks good." } },
+      { trigger: "final approval", response: { kind: "final_approved", content: "Final OK." } },
     ];
   }
 
@@ -44,26 +43,24 @@ export class FakeOrchestratorAdapter implements OrchestratorAdapter {
 
   static withFindings(id: AgentId, name: string): FakeOrchestratorAdapter {
     return new FakeOrchestratorAdapter(id, name, [
-      { trigger: "Independent analysis", response: { kind: "analysis", content: "Analysis." } },
-      { trigger: "Other analysis", response: { kind: "message", content: "Noted." } },
-      { trigger: "Discuss", response: { kind: "message", content: "Plan: incremental." } },
-      { trigger: "Approve plan", response: { kind: "plan_approved", content: "Approved." } },
-      { trigger: "Review the implementation", response: { kind: "finding", content: "Blocker: missing null check in auth flow." } },
-      { trigger: "Fix these findings", response: { kind: "message", content: "Done." } },
-      { trigger: "Implement the plan", response: { kind: "message", content: "Done." } },
-      { trigger: "Final approval", response: { kind: "final_approved", content: "OK." } },
+      { trigger: "independently", response: { kind: "analysis", content: "Analysis." } },
+      { trigger: "review their", response: { kind: "message", content: "Noted." } },
+      { trigger: "approve only", response: { kind: "plan_approved", content: "Approved." } },
+      { trigger: "current role: reviewer", response: { kind: "finding", content: "Blocker: missing null check in auth flow." } },
+      { trigger: "find each finding", response: { kind: "message", content: "Done." } },
+      { trigger: "current role: builder", response: { kind: "message", content: "Done." } },
+      { trigger: "final approval", response: { kind: "final_approved", content: "OK." } },
     ]);
   }
 
   static disagreeing(id: AgentId, name: string): FakeOrchestratorAdapter {
     return new FakeOrchestratorAdapter(id, name, [
-      { trigger: "Independent analysis", response: { kind: "analysis", content: "Analysis." } },
-      { trigger: "Other analysis", response: { kind: "message", content: "Noted." } },
-      { trigger: "Discuss", response: { kind: "message", content: "Disagree." } },
-      { trigger: "Approve plan", response: { kind: "plan_rejected", content: "Rejected." } },
-      { trigger: "Implement the plan", response: { kind: "message", content: "Done." } },
-      { trigger: "Review the implementation", response: { kind: "review_approved", content: "OK." } },
-      { trigger: "Final approval", response: { kind: "final_approved", content: "OK." } },
+      { trigger: "independently", response: { kind: "analysis", content: "Analysis." } },
+      { trigger: "review their", response: { kind: "message", content: "Noted." } },
+      { trigger: "approve only", response: { kind: "plan_rejected", content: "Rejected." } },
+      { trigger: "current role: builder", response: { kind: "message", content: "Done." } },
+      { trigger: "current role: reviewer", response: { kind: "review_approved", content: "OK." } },
+      { trigger: "final approval", response: { kind: "final_approved", content: "OK." } },
     ]);
   }
 }

@@ -61,6 +61,6 @@ describe("ClaudeAdapter", () => {
     const handle = await adapter.start({ task: "test", cwd: "/tmp" });
     await adapter.terminate(handle);
     const status = await adapter.getStatus(handle);
-    expect(status).toBe("terminated");
+    expect(status).toBe("stopped");
   }, 10_000);
 });
