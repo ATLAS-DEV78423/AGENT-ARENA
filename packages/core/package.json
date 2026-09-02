@@ -17,6 +17,7 @@
   "dependencies": {
     "@arena/policy": "workspace:*",
     "@arena/verification": "workspace:*",
+    "@arena/workspace": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

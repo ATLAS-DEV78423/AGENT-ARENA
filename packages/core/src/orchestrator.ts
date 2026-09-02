@@ -16,6 +16,7 @@ import {
 } from "./prompts.js";
 import { VerificationEngine } from "@arena/verification";
 import { SecurityGuard } from "@arena/policy";
+import { WorktreeManager, Worktree } from "@arena/workspace";
 
 export type AgentResponseKind =
   | "analysis"
@@ -48,6 +49,9 @@ export interface OrchestratorConfig {
   };
   security?: {
     profile: "inherit" | "restricted" | "isolated";
+  };
+  workspace?: {
+    strategy: "direct" | "worktree";
   };
   onLog?: (msg: string) => void;
 }
@@ -114,10 +118,12 @@ export class Orchestrator {
   private deadlockDetector: DeadlockDetector;
   private verificationEngine: VerificationEngine | null;
   private securityGuard: SecurityGuard | null;
+  private worktreeManager: WorktreeManager | null;
   private events: OrchestratorEvent[] = [];
   private hA: { sessionId: string } | null = null;
   private hB: { sessionId: string } | null = null;
   private sid!: SessionId;
+  private activeWorktrees: Worktree[] = [];
 
   constructor(
     config: OrchestratorConfig,
@@ -141,6 +147,9 @@ export class Orchestrator {
     this.securityGuard = config.security
       ? new SecurityGuard({ profile: config.security.profile, cwd: config.cwd })
       : null;
+    this.worktreeManager = config.workspace?.strategy === "worktree"
+      ? new WorktreeManager(config.cwd)
+      : null;
   }
 
   async run(): Promise<OrchestratorResult> {
@@ -160,13 +169,21 @@ export class Orchestrator {
       this.trans("initialize");
       this.emit("session.initialized");
 
+      // Create worktrees if configured, otherwise use cwd directly
+      const wtA = this.worktreeManager ? this.worktreeManager.create(this.adapterA.id) : null;
+      const wtB = this.worktreeManager ? this.worktreeManager.create(this.adapterB.id) : null;
+      if (wtA) this.activeWorktrees.push(wtA);
+      if (wtB) this.activeWorktrees.push(wtB);
+      const agentCwdA = wtA?.path ?? this.config.cwd;
+      const agentCwdB = wtB?.path ?? this.config.cwd;
+
       this.hA = await this.adapterA.start({
         task: this.config.task,
-        cwd: this.config.cwd,
+        cwd: agentCwdA,
       });
       this.hB = await this.adapterB.start({
         task: this.config.task,
-        cwd: this.config.cwd,
+        cwd: agentCwdB,
       });
       this.trans("environment_checked");
       this.emit("environment.checked");
@@ -467,6 +484,10 @@ export class Orchestrator {
     } finally {
       if (this.hA) await this.adapterA.terminate(this.hA).catch(() => {});
       if (this.hB) await this.adapterB.terminate(this.hB).catch(() => {});
+      // Clean up worktrees
+      for (const wt of this.activeWorktrees) {
+        this.worktreeManager?.cleanup(wt);
+      }
     }
   }
 
