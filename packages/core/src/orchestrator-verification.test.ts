@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { Orchestrator, OrchestratorConfig } from "./orchestrator.js";
+import { Orchestrator } from "./orchestrator.js";
 import { FakeOrchestratorAdapter } from "./fake-orchestrator-adapter.js";
 import { SessionManager } from "./session/manager.js";
-import { VerificationEngine, VerificationResult } from "@arena/verification";
+import type { VerificationResult } from "@arena/verification";
 
 describe("Orchestrator with verification", () => {
   it("includes verification results in reviewer prompt when configured", async () => {
