@@ -321,16 +321,11 @@ export class Orchestrator {
         let verificationResults: string | undefined;
         if (this.verificationEngine && this.config.verification) {
           this.log("Running verification...");
-          const vResult = await this.verificationEngine.verify(
+          let vResult = await this.verificationEngine.verify(
             this.config.cwd,
             { commands: this.config.verification.commands },
           );
-          verificationResults = vResult.checks
-            .map(
-              (c) =>
-                `${c.name}: ${c.passed ? "PASSED" : "FAILED"}${c.stdout ? "\n" + c.stdout.slice(0, 500) : ""}`,
-            )
-            .join("\n");
+          verificationResults = this.formatVerification(vResult.checks);
           this.emit("verification.completed", {
             passed: vResult.passed,
             checks: vResult.checks.length,
@@ -338,8 +333,59 @@ export class Orchestrator {
           this.log(
             `Verification: ${vResult.passed ? "PASSED" : "FAILED"} (${vResult.checks.length} checks)`,
           );
+
+          // GATE: if verification fails, skip reviewer — send failures to builder
+          if (!vResult.passed) {
+            this.log("Verification failed — sending failures to builder (skipping reviewer)");
+            await builder.sendAndReceive(
+              builderH!,
+              fixPrompt(verificationResults),
+            );
+
+            // Re-run verification after builder fixes
+            this.log("Re-running verification after builder fixes...");
+            vResult = await this.verificationEngine.verify(
+              this.config.cwd,
+              { commands: this.config.verification.commands },
+            );
+            verificationResults = this.formatVerification(vResult.checks);
+            this.emit("verification.completed", {
+              passed: vResult.passed,
+              checks: vResult.checks.length,
+            });
+            this.log(
+              `Verification after fix: ${vResult.passed ? "PASSED" : "FAILED"} (${vResult.checks.length} checks)`,
+            );
+
+            if (!vResult.passed) {
+              // Still failing — create finding and move to next round
+              this.trans("findings_presented");
+              const finding = this.findingManager.create({
+                severity: "blocker",
+                category: "verification",
+                claim: "Verification failed after builder fix attempt",
+                evidence: verificationResults,
+                impact: "Cannot proceed — tests/typecheck failing",
+                fix: "Fix failing checks",
+                createdBy: reviewer.id,
+              });
+              this.emit("finding.created", {
+                findingId: finding.id,
+                severity: finding.severity,
+                claim: finding.claim,
+              }, reviewer.id);
+              this.trans("findings_resolved");
+              if (round < (this.config.maxRounds ?? 3) - 1) {
+                this.trans("implementation_started");
+              }
+              [builder, reviewer] = [reviewer, builder];
+              [builderH, reviewerH] = [reviewerH, builderH];
+              continue;
+            }
+          }
         }
 
+        // Consult reviewer (only when verification passes or no verification configured)
         this.emit("review.started", undefined, reviewer.id);
         const rev = await reviewer.sendAndReceive(
           reviewerH!,
@@ -483,5 +529,11 @@ export class Orchestrator {
       }
     }
     return result;
+  }
+
+  private formatVerification(checks: Array<{ name: string; passed: boolean; stdout: string }>): string {
+    return checks
+      .map((c) => `${c.name}: ${c.passed ? "PASSED" : "FAILED"}${c.stdout ? "\n" + c.stdout.slice(0, 500) : ""}`)
+      .join("\n");
   }
 }
