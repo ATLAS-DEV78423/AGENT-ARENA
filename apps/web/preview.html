@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Arena</title>
+<style>
+  :root {
+    --background: #111C18;
+    --surface: #16221D;
+    --elevated: #1B2923;
+    --hover: #20312A;
+    --border-subtle: #263B32;
+    --border-active: #355A4A;
+    --jade: #509475;
+    --jade-light: #70B895;
+    --jade-soft: #386C57;
+    --jade-dark: #214237;
+    --text-primary: #E1E2C8;
+    --text-secondary: #AEB39A;
+    --text-muted: #737C6D;
+    --text-disabled: #4E5A50;
+    --success: #70B895;
+    --error: #C87575;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background);
+    color: var(--text-primary);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Top Bar */
+  .topbar {
+    height: 56px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: rgba(17,28,24,0.8);
+    backdrop-filter: blur(12px);
+    flex-shrink: 0;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-logo { color: var(--jade); font-size: 20px; }
+  .topbar-title { font-size: 13px; font-weight: 500; color: var(--text-primary); letter-spacing: 0.02em; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .search-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 8px;
+    background: var(--elevated); border: 1px solid var(--border-subtle);
+    color: var(--text-muted); font-size: 13px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .search-btn:hover { border-color: var(--border-active); color: var(--text-secondary); }
+  .search-icon { width: 14px; height: 14px; }
+  .kbd {
+    padding: 2px 6px; border-radius: 4px; background: var(--background);
+    font-size: 10px; font-family: monospace; border: 1px solid var(--border-subtle);
+    margin-left: 8px;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--jade-dark); display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--jade-light); font-weight: 500;
+  }
+
+  /* Layout */
+  .layout { display: flex; flex: 1; min-height: 0; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 224px; border-right: 1px solid var(--border-subtle);
+    background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .sidebar-section { padding: 12px; }
+  .sidebar-label {
+    font-size: 11px; font-weight: 500; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sidebar-label button {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    padding: 4px; border-radius: 4px; transition: color 0.15s;
+  }
+  .sidebar-label button:hover { color: var(--jade); }
+  .agent-item {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 6px; border: none; background: none;
+    color: var(--text-primary); font-size: 13px; cursor: pointer;
+    transition: background 0.15s; text-align: left;
+  }
+  .agent-item:hover { background: var(--hover); }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .status-online { background: var(--success); }
+  .status-offline { background: var(--text-disabled); }
+  .agent-meta { margin-left: auto; font-size: 10px; color: var(--text-disabled); font-family: monospace; }
+
+  .sessions-list { flex: 1; overflow-y: auto; padding: 0 12px; }
+  .session-group-label { font-size: 10px; color: var(--text-disabled); margin-bottom: 4px; }
+  .session-item {
+    width: 100%; display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; border: none; background: none;
+    font-size: 13px; cursor: pointer; text-align: left;
+    transition: background 0.15s;
+  }
+  .session-item:hover { background: var(--hover); color: var(--text-primary); }
+  .session-item.active { background: rgba(33,66,55,0.3); color: var(--jade-light); }
+  .session-item:not(.active) { color: var(--text-secondary); }
+  .session-arena { color: var(--jade); font-size: 11px; }
+  .session-chat { color: var(--text-muted); width: 14px; height: 14px; }
+
+  .sidebar-bottom {
+    padding: 12px; border-top: 1px solid var(--border-subtle);
+  }
+  .sidebar-bottom button {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-radius: 6px; border: none; background: none;
+    color: var(--text-muted); font-size: 13px; cursor: pointer;
+    transition: all 0.15s; text-align: left;
+  }
+  .sidebar-bottom button:hover { background: var(--hover); color: var(--text-secondary); }
+
+  /* Main */
+  .main { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+  /* Empty State */
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .empty-glow {
+    position: relative; margin-bottom: 32px;
+  }
+  .empty-glow::before {
+    content: ''; position: absolute; inset: -32px;
+    background: rgba(80,148,117,0.05); border-radius: 50%;
+    filter: blur(40px);
+  }
+  .empty-symbol { position: relative; font-size: 48px; color: rgba(80,148,117,0.6); user-select: none; }
+  .empty-title { font-size: 24px; font-weight: 300; color: var(--text-primary); letter-spacing: -0.01em; margin-bottom: 8px; }
+  .empty-subtitle { font-size: 14px; color: var(--text-secondary); margin-bottom: 4px; }
+  .empty-desc { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; max-width: 320px; text-align: center; }
+  .start-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: 12px;
+    background: rgba(80,148,117,0.1); border: 1px solid rgba(80,148,117,0.2);
+    color: var(--jade-light); font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .start-btn:hover { background: rgba(80,148,117,0.15); border-color: rgba(80,148,117,0.3); }
+
+  /* SVG icons */
+  .icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-sm { width: 14px; height: 14px; }
+
+  /* Session view (hidden initially) */
+  .session-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .session-view.active { display: flex; }
+
+  .session-header {
+    flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); padding: 12px 16px;
+  }
+  .session-header-inner { max-width: 720px; margin: 0 auto; }
+  .session-header h2 { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+  .session-meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .arena-badge { font-size: 10px; color: var(--jade); display: flex; align-items: center; gap: 4px; }
+  .agent-count { font-size: 11px; color: var(--text-disabled); }
+
+  .messages { flex: 1; overflow-y: auto; min-height: 0; }
+  .messages-inner { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+
+  .message { display: flex; gap: 12px; margin-bottom: 24px; }
+  .message.user { justify-content: flex-end; gap: 0; }
+  .message-avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 500; flex-shrink: 0; padding-top: 2px;
+  }
+  .message-avatar.agent { background: var(--hover); color: var(--text-secondary); }
+  .message-avatar.arena { background: var(--jade-dark); color: var(--jade-light); }
+  .message-avatar.judge { background: rgba(80,148,117,0.2); color: var(--jade-light); }
+  .message-content { flex: 1; min-width: 0; }
+  .message-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .message-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .message-name.judge { color: var(--jade-light); }
+  .judge-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 9999px;
+    background: rgba(80,148,117,0.1); color: var(--jade);
+    border: 1px solid rgba(80,148,117,0.2); font-weight: 500;
+  }
+  .message-time { font-size: 11px; color: var(--text-disabled); }
+  .message-text { font-size: 15px; line-height: 1.65; color: var(--text-primary); white-space: pre-wrap; }
+  .message.user .message-text { text-align: right; max-width: 80%; margin-left: auto; }
+  .message.user .message-time { text-align: right; }
+
+  /* Composer */
+  .composer-wrap { flex-shrink: 0; padding: 0 16px 16px; max-width: 752px; margin: 0 auto; width: 100%; }
+  .composer {
+    position: relative; background: var(--elevated);
+    border: 1px solid var(--border-subtle); border-radius: 16px;
+    transition: all 0.15s;
+  }
+  .composer.focused { border-color: var(--border-active); box-shadow: 0 8px 32px rgba(80,148,117,0.05); }
+  .composer textarea {
+    width: 100%; background: transparent; color: var(--text-primary);
+    font-size: 15px; padding: 16px 16px 48px; resize: none;
+    outline: none; border: none; font-family: inherit; line-height: 1.6;
+  }
+  .composer textarea::placeholder { color: var(--text-muted); }
+  .composer-bottom {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .attach-btn {
+    padding: 6px; border-radius: 8px; background: none; border: none;
+    color: var(--text-muted); cursor: pointer; transition: color 0.15s;
+  }
+  .attach-btn:hover { color: var(--text-secondary); }
+  .send-btn {
+    padding: 8px; border-radius: 12px; background: none; border: none;
+    color: var(--text-disabled); cursor: pointer; transition: all 0.15s;
+  }
+  .send-btn.active { background: var(--jade); color: var(--background); }
+  .composer-hint {
+    text-align: center; font-size: 11px; color: var(--text-disabled); margin-top: 10px;
+  }
+  .composer-hint kbd {
+    padding: 2px 6px; border-radius: 4px; background: var(--elevated);
+    font-size: 10px; font-family: monospace; border: 1px solid var(--border-subtle);
+    margin: 0 2px;
+  }
+
+  /* Hidden states */
+  .empty-state.hidden { display: none; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Top Bar -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-logo">◈</span>
+    <span class="topbar-title">Agent Arena</span>
+  </div>
+  <div class="topbar-right">
+    <button class="search-btn">
+      <svg class="search-icon icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.34-4.34"/></svg>
+      Search
+      <span class="kbd">⌘K</span>
+    </button>
+    <div class="avatar">S</div>
+  </div>
+</header>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">
+        Agents
+        <button><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      </div>
+      <button class="agent-item"><span class="status-dot status-online"></span>Arena</button>
+      <button class="agent-item"><span class="status-dot status-online"></span>Claude<span class="agent-meta">Anthropic</span></button>
+      <button class="agent-item"><span class="status-dot status-online"></span>GPT<span class="agent-meta">OpenAI</span></button>
+      <button class="agent-item"><span class="status-dot status-offline"></span>Gemini<span class="agent-meta">Google</span></button>
+      <button class="agent-item"><span class="status-dot status-offline"></span>Qwen<span class="agent-meta">Open source</span></button>
+    </div>
+
+    <div class="sessions-list">
+      <div class="sidebar-label">Sessions</div>
+      <div style="margin-bottom: 12px;">
+        <div class="session-group-label">Today</div>
+        <button class="session-item active" onclick="showSession()">
+          <span class="session-arena">◈</span>
+          Multi-agent benchmark design
+        </button>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div class="session-group-label">Yesterday</div>
+        <button class="session-item" onclick="showSession()">
+          <svg class="session-chat icon" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          API rate limiting strategy
+        </button>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div class="session-group-label">Previous 7 days</div>
+        <button class="session-item">
+          <svg class="session-chat icon" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          Database migration plan
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <button>
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </button>
+      <button>
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+        Help
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-glow">
+        <span class="empty-symbol">◈</span>
+      </div>
+      <h1 class="empty-title">Agent Arena</h1>
+      <p class="empty-subtitle">One question. Multiple minds.</p>
+      <p class="empty-desc">Compare agents, evaluate responses, and find the strongest answer.</p>
+      <button class="start-btn" onclick="showSession()">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Start an Arena
+      </button>
+    </div>
+
+    <!-- Session View -->
+    <div class="session-view" id="sessionView">
+      <div class="session-header">
+        <div class="session-header-inner">
+          <h2>Multi-agent benchmark design</h2>
+          <div class="session-meta">
+            <span class="arena-badge"><span style="font-size:12px">◈</span> Arena</span>
+            <span class="agent-count">3 agents</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="messages">
+        <div class="messages-inner">
+
+          <!-- User message -->
+          <div class="message user">
+            <div class="message-content">
+              <p class="message-text">Should we use a multi-agent approach for this benchmark?</p>
+              <p class="message-time">2:30 PM</p>
+            </div>
+          </div>
+
+          <!-- Arena response -->
+          <div class="message">
+            <div class="message-avatar arena">◈</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-name">Arena</span>
+                <span class="message-time">2:31 PM</span>
+              </div>
+              <div class="message-text">Yes. I'd structure it around three independent agents and one judge.
+
+The important part is keeping the judge isolated from the agents' intermediate reasoning.</div>
+            </div>
+          </div>
+
+          <!-- User message -->
+          <div class="message user">
+            <div class="message-content">
+              <p class="message-text">What's the best architecture for the data pipeline?</p>
+              <p class="message-time">2:35 PM</p>
+            </div>
+          </div>
+
+          <!-- Claude response -->
+          <div class="message">
+            <div class="message-avatar agent">Cl</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-name">Claude</span>
+                <span class="message-time">2:35 PM</span>
+              </div>
+              <div class="message-text">I'd recommend a three-tier architecture with clear separation of concerns.
+
+**Data Layer**: PostgreSQL with connection pooling via PgBouncer. Use prepared statements for repeated queries — this alone can improve throughput by 20-30%.
+
+**Service Layer**: Stateless Node.js services behind a load balancer. Each service owns its database schema and exposes a REST/gRPC API.
+
+**Caching Layer**: Redis for session data and frequently-accessed read paths. Use write-through caching to avoid stale data.</div>
+            </div>
+          </div>
+
+          <!-- GPT response -->
+          <div class="message">
+            <div class="message-avatar agent">GP</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-name">GPT</span>
+                <span class="message-time">2:36 PM</span>
+              </div>
+              <div class="message-text">Here's a practical approach that balances speed and safety:
+
+**Phase 1: Foundation** (Week 1-2)
+- Set up CI/CD pipelines for independent deployments
+- Create shared types/interfaces for cross-service communication
+- Deploy API gateway (Kong or Traefik) for routing
+
+**Phase 2: Extract** (Week 3-4)
+- Extract the most independent service first (usually auth or notifications)
+- Use dual-write pattern during transition
+- Monitor error rates and latency closely</div>
+            </div>
+          </div>
+
+          <!-- Judge response -->
+          <div class="message">
+            <div class="message-avatar judge">⚖</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-name judge">Judge</span>
+                <span class="judge-tag">JUDGE</span>
+                <span class="message-time">2:38 PM</span>
+              </div>
+              <div class="message-text" style="color: rgba(112,184,149,0.9);">Winner: Claude
+
+Confidence: 87%
+
+Reasoning: Strongest technical depth with practical implementation details. The three-tier architecture is well-structured, the strangler fig migration pattern is the safest approach, and the specific performance numbers (20-30% from prepared statements) show real production experience.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div class="composer-wrap">
+        <div class="composer" id="composer">
+          <textarea placeholder="Message Agent Arena..." rows="1" id="composerInput" onfocus="document.getElementById('composer').classList.add('focused')" onblur="document.getElementById('composer').classList.remove('focused')"></textarea>
+          <div class="composer-bottom">
+            <button class="attach-btn">
+              <svg class="icon" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <button class="send-btn">
+              <svg class="icon" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+            </button>
+          </div>
+        </div>
+        <p class="composer-hint">
+          Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+<script>
+function showSession() {
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('sessionView').classList.add('active');
+}
+
+// Auto-resize textarea
+const textarea = document.getElementById('composerInput');
+if (textarea) {
+  textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+  });
+}
+</script>
+
+</body>
+</html>

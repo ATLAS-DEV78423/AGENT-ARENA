@@ -1,0 +1,137 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Osaka Jade Design Tokens */
+:root {
+  --background: #111C18;
+  --background-secondary: #16221D;
+  --elevated: #1B2923;
+  --hover: #20312A;
+  --border-subtle: #263B32;
+  --border-active: #355A4A;
+
+  --jade: #509475;
+  --jade-light: #70B895;
+  --jade-soft: #386C57;
+  --jade-dark: #214237;
+
+  --text-primary: #E1E2C8;
+  --text-secondary: #AEB39A;
+  --text-muted: #737C6D;
+  --text-disabled: #4E5A50;
+
+  --success: #70B895;
+  --warning: #C9A86A;
+  --error: #C87575;
+  --info: #7AA9A0;
+
+  --foreground: var(--text-primary);
+  --card: var(--background-secondary);
+  --card-foreground: var(--text-primary);
+  --popover: var(--elevated);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--jade);
+  --primary-foreground: var(--text-primary);
+  --secondary: var(--background-secondary);
+  --secondary-foreground: var(--text-secondary);
+  --muted: var(--elevated);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--jade-dark);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--error);
+  --border: var(--border-subtle);
+  --input: var(--border-subtle);
+  --ring: var(--jade);
+  --radius: 0.625rem;
+
+  --sidebar: var(--background-secondary);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--jade);
+  --sidebar-primary-foreground: var(--text-primary);
+  --sidebar-accent: var(--hover);
+  --sidebar-accent-foreground: var(--text-secondary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--jade);
+
+  --chart-1: var(--jade);
+  --chart-2: var(--jade-light);
+  --chart-3: var(--jade-soft);
+  --chart-4: var(--info);
+  --chart-5: var(--warning);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-jade: #509475;
+  --color-jade-light: #70B895;
+  --color-jade-soft: #386C57;
+  --color-jade-dark: #214237;
+  --color-surface: #16221D;
+  --color-elevated: #1B2923;
+  --color-hover-surface: #20312A;
+  --color-border-subtle: #263B32;
+  --color-border-active: #355A4A;
+  --color-text-primary: #E1E2C8;
+  --color-text-secondary: #AEB39A;
+  --color-text-muted: #737C6D;
+  --color-text-disabled: #4E5A50;
+  --color-status-success: #70B895;
+  --color-status-warning: #C9A86A;
+  --color-status-error: #C87575;
+  --color-status-info: #7AA9A0;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+}
