@@ -14,6 +14,7 @@ import {
   fixPrompt,
   finalApprovalPrompt,
 } from "./prompts.js";
+import { VerificationEngine } from "@arena/verification";
 
 export type AgentResponseKind =
   | "analysis"
@@ -41,6 +42,9 @@ export interface OrchestratorConfig {
   maxRounds?: number;
   maxMinutes?: number;
   maxRepeatedObjections?: number;
+  verification?: {
+    commands: Array<{ name: string; cmd: string; args?: string[]; timeoutMs?: number }>;
+  };
   onLog?: (msg: string) => void;
 }
 
@@ -104,6 +108,7 @@ export class Orchestrator {
   private eventStore: EventStore | null;
   private findingManager: FindingManager;
   private deadlockDetector: DeadlockDetector;
+  private verificationEngine: VerificationEngine | null;
   private events: OrchestratorEvent[] = [];
   private hA: { sessionId: string } | null = null;
   private hB: { sessionId: string } | null = null;
@@ -125,6 +130,9 @@ export class Orchestrator {
     this.deadlockDetector = new DeadlockDetector(
       this.config.maxRepeatedObjections ?? 2,
     );
+    this.verificationEngine = config.verification
+      ? new VerificationEngine()
+      : null;
   }
 
   async run(): Promise<OrchestratorResult> {
@@ -301,10 +309,33 @@ export class Orchestrator {
         );
         this.trans("implementation_completed");
 
+        // Run verification if configured
+        let verificationResults: string | undefined;
+        if (this.verificationEngine && this.config.verification) {
+          this.log("Running verification...");
+          const vResult = await this.verificationEngine.verify(
+            this.config.cwd,
+            { commands: this.config.verification.commands },
+          );
+          verificationResults = vResult.checks
+            .map(
+              (c) =>
+                `${c.name}: ${c.passed ? "PASSED" : "FAILED"}${c.stdout ? "\n" + c.stdout.slice(0, 500) : ""}`,
+            )
+            .join("\n");
+          this.emit("verification.completed", {
+            passed: vResult.passed,
+            checks: vResult.checks.length,
+          });
+          this.log(
+            `Verification: ${vResult.passed ? "PASSED" : "FAILED"} (${vResult.checks.length} checks)`,
+          );
+        }
+
         this.emit("review.started", undefined, reviewer.id);
         const rev = await reviewer.sendAndReceive(
           reviewerH!,
-          reviewPrompt(this.config.task),
+          reviewPrompt(this.config.task, verificationResults),
         );
 
         if (rev.kind === "review_approved") {
