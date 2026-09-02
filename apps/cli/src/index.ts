@@ -208,6 +208,86 @@ program
     console.log("");
   });
 
+// ── arena resume ────────────────────────────────────────
+program
+  .command("resume <session-id>")
+  .description("Resume a timed-out or failed session")
+  .option("--fake", "Use fake agents")
+  .option("--rounds <n>", "Max rounds", "5")
+  .action(async (sessionId: string, opts: { fake?: boolean; rounds: string }) => {
+    const cwd = process.cwd();
+    const sessionDir = join(cwd, ".arena", "sessions", sessionId);
+    if (!existsSync(sessionDir)) {
+      console.log("Session not found: " + sessionId);
+      return;
+    }
+    const resultPath = join(sessionDir, "result.json");
+    if (!existsSync(resultPath)) {
+      console.log("Session is still in progress (no result.json). Nothing to resume.");
+      return;
+    }
+    const prev = JSON.parse(readFileSync(resultPath, "utf-8"));
+    console.log("");
+    console.log("Resuming session: " + sessionId);
+    console.log("Previous outcome: " + prev.outcome);
+    console.log("Task: " + (prev.task ?? "unknown"));
+    console.log("");
+
+    // Re-run the same task with fresh agents
+    const config = await loadConfig(cwd);
+    const eventStore = new EventStore(sessionDir);
+
+    let agentA, agentB;
+    if (opts.fake) {
+      agentA = new FakeOrchestratorAdapter(agentId("agent-a"), "Agent A");
+      agentB = new FakeOrchestratorAdapter(agentId("agent-b"), "Agent B");
+    } else {
+      const modelA = config.agents[0]?.command ?? "claude";
+      const modelB = config.agents[1]?.command ?? "opencode";
+      agentA = new OpenCodeAdapter(modelA);
+      agentB = new OpenCodeAdapter(modelB);
+    }
+
+    const maxRounds = parseInt(opts.rounds, 10) || config.debate.maxRounds;
+    const orch = new Orchestrator(
+      {
+        task: prev.task,
+        cwd,
+        maxRounds,
+        maxMinutes: config.debate.maxMinutes,
+        maxRepeatedObjections: config.debate.maxRepeatedObjections,
+        onLog: (msg) => console.log("  " + msg),
+      },
+      agentA,
+      agentB,
+      undefined,
+      eventStore,
+    );
+    const result = await orch.run();
+
+    // Overwrite result.json
+    writeFileSync(
+      resultPath,
+      JSON.stringify(
+        {
+          sessionId: result.sessionId,
+          outcome: result.outcome,
+          state: result.state,
+          rounds: result.rounds,
+          task: prev.task,
+          timestamp: new Date().toISOString(),
+          resumedFrom: sessionId,
+        },
+        null,
+        2,
+      ),
+    );
+
+    console.log("");
+    console.log("Outcome: " + result.outcome + " | Rounds: " + result.rounds + " | State: " + result.state);
+    console.log("");
+  });
+
 // ── arena inspect ─────────────────────────────────────────
 program
   .command("inspect <session-id>")
