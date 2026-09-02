@@ -74,6 +74,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@arena/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@arena/verification':
+        specifier: workspace:*
+        version: link:../verification
+      '@arena/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       zod:
         specifier: ^3.24.0
         version: 3.25.76

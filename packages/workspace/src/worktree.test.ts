@@ -23,6 +23,9 @@ describe("WorktreeManager", () => {
     const wt = mgr.create("agent-a");
     expect(existsSync(wt.path)).toBe(true);
     expect(wt.branch).toContain("arena/agent-a");
+    // Verify worktree is registered by git
+    const worktrees = execSync("git worktree list", { cwd: repo, encoding: "utf-8" });
+    expect(worktrees).toContain(wt.path);
     mgr.cleanup(wt);
   });
 

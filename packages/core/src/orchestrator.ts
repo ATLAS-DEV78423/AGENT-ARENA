@@ -3,6 +3,7 @@ import { ArenaState } from "./types/state-machine.js";
 import { SessionManager } from "./session/manager.js";
 import { FindingManager } from "./session/finding-manager.js";
 import { DeadlockDetector } from "./session/deadlock-detector.js";
+import { BudgetEnforcer } from "./session/budget.js";
 import { FindingSeverity, CreateFindingParams } from "./types/finding.js";
 import { EventStore } from "./persistence/event-store.js";
 import {
@@ -124,6 +125,7 @@ export class Orchestrator {
   private hB: { sessionId: string } | null = null;
   private sid!: SessionId;
   private activeWorktrees: Worktree[] = [];
+  private budget!: BudgetEnforcer;
 
   constructor(
     config: OrchestratorConfig,
@@ -185,6 +187,15 @@ export class Orchestrator {
         task: this.config.task,
         cwd: agentCwdB,
       });
+      if (!this.budget) {
+        this.budget = new BudgetEnforcer({
+          maxRounds: this.config.maxRounds ?? 3,
+          maxMinutes: this.config.maxMinutes ?? 10,
+          maxAgentTurns: 40,
+          maxToolCalls: 200,
+        });
+      }
+
       this.trans("environment_checked");
       this.emit("environment.checked");
       this.log("Both agents launched.");
@@ -318,6 +329,12 @@ export class Orchestrator {
         round < (this.config.maxRounds ?? 3);
         round++
       ) {
+        if (!this.budget.canProceed()) {
+          this.log("Budget exceeded — stopping.");
+          this.trans("timeout");
+          return this.result("timeout");
+        }
+        this.budget.recordRound();
         if (isFirstRound) {
           isFirstRound = false;
         } else {

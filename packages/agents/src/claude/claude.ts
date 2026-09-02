@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { AgentId, AgentCapabilities, AgentStatus, AgentResponse, agentId, sessionId } from "@arena/core";
 import { AgentAdapter, DetectionResult, AgentSessionHandle } from "../adapter.js";
-import { buildResponse } from "../response-parser.js";
+import { buildResponse } from "@arena/core";
 import { PersistentSession } from "@arena/pty";
 import { createPersistentClaude } from "./persistent-session-wrapper.js";
 
@@ -82,8 +82,6 @@ export class ClaudeAdapter implements AgentAdapter {
       return { kind: "error", content: `Claude error: ${String(error)}` };
     }
   }
-
-  async send(_handle: AgentSessionHandle, _message: string): Promise<void> {}
 
   async interrupt(handle: AgentSessionHandle): Promise<void> {
     const session = this.persistentSessions.get(handle.sessionId);

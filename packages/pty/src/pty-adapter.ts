@@ -1,7 +1,7 @@
 import { AgentId } from "@arena/core";
 import { OrchestratorAdapter, AgentResponse } from "@arena/core";
 import { PersistentSession } from "./persistent-session.js";
-import { buildResponse } from "./response-parser.js";
+import { buildResponse } from "@arena/core";
 
 export class PtyAgentAdapter implements OrchestratorAdapter {
   readonly id: AgentId;

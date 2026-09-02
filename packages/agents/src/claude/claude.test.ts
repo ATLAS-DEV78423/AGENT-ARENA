@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { ClaudeAdapter } from "./claude.js";
-import { parseResponseKind } from "../response-parser.js";
+import { parseResponseKind } from "@arena/core";
 import { sessionId } from "@arena/core";
 
 describe("ClaudeAdapter", () => {

@@ -6,7 +6,6 @@ export interface AgentAdapter {
   id: AgentId; name: string;
   detect(): Promise<DetectionResult>;
   start(config: { task: string; cwd: string; env?: Record<string, string> }): Promise<AgentSessionHandle>;
-  send(handle: AgentSessionHandle, message: string): Promise<void>;
   interrupt(handle: AgentSessionHandle): Promise<void>;
   terminate(handle: AgentSessionHandle): Promise<void>;
   getStatus(handle: AgentSessionHandle): Promise<AgentStatus>;

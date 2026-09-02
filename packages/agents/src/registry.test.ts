@@ -8,7 +8,7 @@ function mock(id: string, name: string, detected: boolean): AgentAdapter {
     id: agentId(id), name,
     async detect(): Promise<DetectionResult> { return { detected, command: name.toLowerCase() }; },
     async start() { return { sessionId: "mock" as SessionId, pid: 1234 }; },
-    async send() {}, async interrupt() {}, async terminate() {},
+    async interrupt() {}, async terminate() {},
     async getStatus(): Promise<AgentStatus> { return "idle"; },
     async capabilities(): Promise<AgentCapabilities> { return { terminal: true, filesystem: true, shell: true, mcp: false, plugins: false, network: false, interactive: true, supportsInterrupt: true, supportsResume: false }; },
   };

@@ -81,13 +81,6 @@ export class GenericAgentAdapter
     return this.ptyAdapter.sendAndReceive(handle, message);
   }
 
-  async send(
-    _handle: AgentSessionHandle,
-    _message: string,
-  ): Promise<void> {
-    // Use sendAndReceive instead
-  }
-
   async interrupt(
     handle: AgentSessionHandle,
   ): Promise<void> {
