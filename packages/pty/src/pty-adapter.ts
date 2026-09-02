@@ -1,6 +1,7 @@
 import { AgentId } from "@arena/core";
 import { OrchestratorAdapter, AgentResponse } from "@arena/core";
 import { PersistentSession } from "./persistent-session.js";
+import { buildResponse } from "./response-parser.js";
 
 export class PtyAgentAdapter implements OrchestratorAdapter {
   readonly id: AgentId;
@@ -51,7 +52,7 @@ export class PtyAgentAdapter implements OrchestratorAdapter {
 
     try {
       const response = await session.sendAndWait(message, 120_000);
-      return { kind: "message", content: response.trim() };
+      return buildResponse(response.trim(), message);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg === "timeout") {

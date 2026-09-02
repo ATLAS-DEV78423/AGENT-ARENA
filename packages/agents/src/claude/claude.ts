@@ -1,15 +1,9 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { AgentId, AgentCapabilities, AgentStatus, agentId, sessionId } from "@arena/core";
+import { AgentId, AgentCapabilities, AgentStatus, AgentResponse, agentId, sessionId } from "@arena/core";
 import { AgentAdapter, DetectionResult, AgentSessionHandle } from "../adapter.js";
-
-interface ClaudeResponse {
-  kind: "analysis" | "message" | "plan_approved" | "plan_rejected"
-    | "finding" | "review_approved" | "review_rejected"
-    | "final_approved" | "final_rejected" | "error" | "timeout" | "crash";
-  content: string;
-  data?: Record<string, unknown>;
-}
+import { buildResponse } from "../response-parser.js";
+import { PersistentSession } from "@arena/pty";
+import { createPersistentClaude } from "./persistent-session-wrapper.js";
 
 const CLAUDE_COMMAND = "claude";
 
@@ -17,7 +11,9 @@ export class ClaudeAdapter implements AgentAdapter {
   readonly id: AgentId = agentId("claude");
   readonly name = "Claude";
   private detected = false;
-  private paths = new Map<string, { pid: number; alive: boolean }>();
+  private persistentSessions = new Map<string, PersistentSession>();
+  // Fallback for one-shot mode when persistent session creation fails
+  private oneShotSessions = new Map<string, { pid: number; alive: boolean }>();
 
   async detect(): Promise<DetectionResult> {
     return new Promise((resolve) => {
@@ -34,48 +30,83 @@ export class ClaudeAdapter implements AgentAdapter {
     });
   }
 
-  async start(_config: { task: string; cwd: string; env?: Record<string, string> }): Promise<AgentSessionHandle> {
+  async start(config: { task: string; cwd: string; env?: Record<string, string> }): Promise<AgentSessionHandle> {
     if (!this.detected) await this.detect();
     if (!this.detected) {
       throw new Error("Claude CLI not detected. Run 'arena doctor' to diagnose.");
     }
-    const sid = sessionId(randomUUID());
-    // ponytail: for initial version, we don't actually spawn claude in start()
-    // The real spawn happens in sendAndReceive() using claude -p "prompt"
-    // This keeps things simple — one process per message
-    this.paths.set(sid, { pid: 0, alive: true });
-    return { sessionId: sid, pid: 0 };
+
+    try {
+      const session = createPersistentClaude({
+        cwd: config.cwd,
+        env: config.env,
+        claudeCommand: CLAUDE_COMMAND,
+      });
+      this.persistentSessions.set(session.sessionId, session);
+      return { sessionId: sessionId(session.sessionId), pid: session.pid };
+    } catch {
+      // Fallback: one-shot mode
+      const sid = `oneshot-${Date.now()}`;
+      this.oneShotSessions.set(sid, { pid: 0, alive: true });
+      return { sessionId: sessionId(sid), pid: 0 };
+    }
   }
 
-  async sendAndReceive(handle: AgentSessionHandle, message: string): Promise<ClaudeResponse> {
-    const info = this.paths.get(handle.sessionId);
-    if (!info) throw new Error("Unknown session");
+  async sendAndReceive(handle: AgentSessionHandle, message: string): Promise<AgentResponse> {
+    // Try persistent session first
+    const session = this.persistentSessions.get(handle.sessionId);
+    if (session) {
+      if (!session.isAlive()) {
+        return { kind: "crash", content: "Claude process exited" };
+      }
+      try {
+        const output = await session.sendAndWait(message, 120_000);
+        return buildResponse(output, message);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg === "timeout") {
+          return { kind: "timeout", content: "Claude did not respond in time" };
+        }
+        return { kind: "error", content: `Claude error: ${msg}` };
+      }
+    }
+
+    // Fallback: one-shot mode
+    const info = this.oneShotSessions.get(handle.sessionId);
+    if (!info) return { kind: "error", content: "Unknown session" };
 
     try {
       const output = await this.spawnClaude(message);
-      return { kind: "message", content: output };
+      return buildResponse(output, message);
     } catch (error) {
       return { kind: "error", content: `Claude error: ${String(error)}` };
     }
   }
 
-  async send(_handle: AgentSessionHandle, _message: string): Promise<void> {
-    // Not used directly — sendAndReceive is the primary interface
-  }
+  async send(_handle: AgentSessionHandle, _message: string): Promise<void> {}
 
-  async interrupt(_handle: AgentSessionHandle): Promise<void> {
-    // ponytail: kill any running process. For one-shot mode, interrupt = cancel
+  async interrupt(handle: AgentSessionHandle): Promise<void> {
+    const session = this.persistentSessions.get(handle.sessionId);
+    if (session) session.kill();
   }
 
   async terminate(handle: AgentSessionHandle): Promise<void> {
-    const info = this.paths.get(handle.sessionId);
+    const session = this.persistentSessions.get(handle.sessionId);
+    if (session) {
+      session.kill();
+      this.persistentSessions.delete(handle.sessionId);
+    }
+    const info = this.oneShotSessions.get(handle.sessionId);
     if (info) {
       info.alive = false;
+      this.oneShotSessions.delete(handle.sessionId);
     }
   }
 
   async getStatus(handle: AgentSessionHandle): Promise<AgentStatus> {
-    const info = this.paths.get(handle.sessionId);
+    const session = this.persistentSessions.get(handle.sessionId);
+    if (session) return session.isAlive() ? "running" : "stopped";
+    const info = this.oneShotSessions.get(handle.sessionId);
     if (!info) return "stopped";
     return info.alive ? "running" : "stopped";
   }
@@ -94,8 +125,7 @@ export class ClaudeAdapter implements AgentAdapter {
     };
   }
 
-  // ponytail: one-shot mode, simplest possible. Spawn claude -p, capture stdout, return.
-  // Add PTY persistent sessions when interactive mode is needed.
+  // Fallback one-shot mode
   private spawnClaude(prompt: string, cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const args = ["-p", prompt, "--output-format", "text"];
@@ -105,7 +135,6 @@ export class ClaudeAdapter implements AgentAdapter {
         maxBuffer: 1024 * 1024,
       }, (err, stdout, stderr) => {
         if (err) {
-          // ponytail: if claude exits non-zero, check if we got useful output anyway
           if (stdout && stdout.trim().length > 0) {
             resolve(stdout.trim());
           } else {
