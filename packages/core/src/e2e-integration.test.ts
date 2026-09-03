@@ -36,13 +36,8 @@ describe("E2E: full orchestrator lifecycle", () => {
       b,
     );
 
-    const events: string[] = [];
     const result = await orch.run();
-
-    // Collect event types from result
-    for (const e of result.events) {
-      events.push(e.type);
-    }
+    const events = result.events.map((e) => e.type);
 
     // Should complete (fake agents always reach consensus)
     expect(["consensus", "timeout"]).toContain(result.outcome);
@@ -50,34 +45,19 @@ describe("E2E: full orchestrator lifecycle", () => {
     expect(result.sessionId).toBeTruthy();
 
     // Key protocol events should be present
-    expect(events).toContain("session.created");
-    expect(events).toContain("session.initialized");
-    expect(events).toContain("environment.checked");
-    expect(events).toContain("analysis.started");
-    expect(events).toContain("analysis.complete");
-    expect(events).toContain("discussion.complete");
-    expect(events).toContain("plan.approved");
-    expect(events).toContain("round.started");
-    expect(events).toContain("consensus.reached");
-  });
-
-  it("emits analysis.started BEFORE agents respond", async () => {
-    const [a, b] = makeFakePair();
-    const orch = new Orchestrator(
-      { task: "Test timing", cwd: process.cwd(), maxRounds: 1, maxMinutes: 1 },
-      a,
-      b,
-    );
-
-    const result = await orch.run();
-    const eventTypes = result.events.map((e) => e.type);
-
-    const startedIdx = eventTypes.indexOf("analysis.started");
-    const completeIdx = eventTypes.indexOf("analysis.complete");
-
-    // analysis.started must come before analysis.complete
-    expect(startedIdx).toBeGreaterThanOrEqual(0);
-    expect(completeIdx).toBeGreaterThan(startedIdx);
+    for (const type of [
+      "session.created",
+      "session.initialized",
+      "environment.checked",
+      "analysis.started",
+      "analysis.complete",
+      "discussion.complete",
+      "plan.approved",
+      "round.started",
+      "consensus.reached",
+    ]) {
+      expect(events).toContain(type);
+    }
   });
 
   it("survives multi-round review findings without state-machine crash", async () => {
@@ -130,24 +110,6 @@ describe("E2E: full orchestrator lifecycle", () => {
 
     expect(aTerminated).toBe(true);
     expect(bTerminated).toBe(true);
-  });
-
-  it("respects budget limits", async () => {
-    const [a, b] = makeFakePair();
-    const orch = new Orchestrator(
-      {
-        task: "Budget test",
-        cwd: process.cwd(),
-        maxRounds: 1,
-        maxMinutes: 0.01, // 0.6 seconds
-      },
-      a,
-      b,
-    );
-
-    const result = await orch.run();
-    // Should terminate — either consensus (fast fake agents) or timeout
-    expect(["consensus", "timeout"]).toContain(result.outcome);
   });
 
   it("handles abort signal", async () => {

@@ -51,11 +51,10 @@ program
   .option("--rounds <n>", "Max rounds", "5")
   .option("--security <profile>", "Security profile: inherit, restricted, isolated")
   .option("--no-verify", "Disable verification (test/lint/typecheck)")
-  .option("--workspace <strategy>", "Workspace strategy: direct, worktree")
   .action(
     async (
       task: string,
-      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string; security?: string; verify: boolean; workspace?: string },
+      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string; security?: string; verify: boolean },
     ) => {
       const cwd = process.cwd();
       const config = await loadConfig(cwd);
@@ -106,21 +105,21 @@ program
       };
       process.on("SIGINT", onSigint);
 
-      let workspaceStrategy = (opts.workspace ?? config.workspace.strategy) as "direct" | "worktree";
-      if (workspaceStrategy === "worktree") {
-        // git worktree requires a git repo — fall back to direct otherwise
+      // git worktrees need a git repo — fall back to direct otherwise.
+      // The orchestrator only implements direct|worktree; "copy" behaves as direct.
+      let workspaceStrategy: "direct" | "worktree" = "direct";
+      if (config.workspace.strategy === "worktree") {
         try {
-          execSync("git rev-parse --is-inside-work-tree", { encoding: "utf-8", stdio: "ignore", timeout: 5000, cwd });
+          execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore", timeout: 5000, cwd });
+          workspaceStrategy = "worktree";
         } catch {
-          workspaceStrategy = "direct";
-          console.log("  Not a git repository — falling back to direct workspace strategy");
+          console.log("  Not a git repository — using direct workspace strategy");
         }
       }
-      const verification = opts.verify !== false ? {
-        commands: [
-          ...(config.verification.runTests ? [{ name: "test", cmd: "pnpm", args: ["test"] }] : []),
-        ],
-      } : undefined;
+      const verification =
+        opts.verify !== false && config.verification.runTests
+          ? { commands: [{ name: "test", cmd: "pnpm", args: ["test"] }] }
+          : undefined;
 
       const orch = new Orchestrator(
         {
@@ -145,7 +144,7 @@ program
       process.off("SIGINT", onSigint);
 
       // Save session result (preserved even on interrupt)
-      const wasInterrupted = result.outcome === "error" && abortController.signal.aborted;
+      const interrupted = abortController.signal.aborted;
       writeFileSync(
         join(sessionDir, "result.json"),
         JSON.stringify(
@@ -156,7 +155,7 @@ program
             rounds: result.rounds,
             task,
             timestamp: new Date().toISOString(),
-            ...(wasInterrupted ? { interrupted: true } : {}),
+            ...(interrupted ? { interrupted: true } : {}),
           },
           null,
           2,
@@ -164,7 +163,7 @@ program
       );
 
       console.log("");
-      if (wasInterrupted) {
+      if (interrupted) {
         console.log("Session interrupted. Events preserved in:");
         console.log("  " + sessionDir);
         console.log("");

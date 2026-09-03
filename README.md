@@ -77,7 +77,6 @@ Options for `arena run`:
 | `--model-a <cmd>` / `--model-b <cmd>` | Agent command per side |
 | `--rounds <n>` | Max build/review rounds (default 5) |
 | `--security <profile>` | `inherit` \| `restricted` \| `isolated` |
-| `--workspace <strategy>` | `direct` \| `worktree` (git worktrees isolate each agent's copy; falls back to `direct` outside a git repo) |
 | `--no-verify` | Skip the test/typecheck verification gate |
 
 **Interrupting a session:** `Ctrl+C` triggers a graceful shutdown — child agents are
@@ -105,7 +104,7 @@ verification:
   requireCleanReview: true
 
 workspace:
-  strategy: direct  # direct | worktree
+  strategy: direct  # direct | worktree (worktree falls back to direct outside a git repo)
 
 security:
   profile: inherit  # inherit | restricted | isolated

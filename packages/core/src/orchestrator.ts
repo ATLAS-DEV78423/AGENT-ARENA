@@ -337,12 +337,13 @@ export class Orchestrator {
         round++
       ) {
         checkAborted();
-        // Round starts: ROLE_SWITCH → IMPLEMENTING (first round is already IMPLEMENTING after plan approval)
-        if (isFirstRound) {
-          isFirstRound = false;
-        } else {
-          this.trans("implementation_started");
+        // Each round: IMPLEMENTING → REVIEWING → (REVISING → VERIFYING) → ROLE_SWITCH.
+        // Only this loop top (or post-loop final review) leaves ROLE_SWITCH,
+        // so round bodies must not transition into IMPLEMENTING themselves.
+        if (!isFirstRound) {
+          this.trans("implementation_started"); // ROLE_SWITCH → IMPLEMENTING
         }
+        isFirstRound = false;
         if (!this.budget.canProceed()) {
           this.log("Budget exceeded — stopping.");
           this.trans("timeout"); // legal from IMPLEMENTING
@@ -420,11 +421,9 @@ export class Orchestrator {
               this.trans("findings_resolved"); // REVISING → VERIFYING
               this.trans("verification_passed"); // VERIFYING → ROLE_SWITCH
               if (round === (this.config.maxRounds ?? 3) - 1) {
-                // Exhausted all rounds with verification still failing — no consensus claim
                 this.log("Verification still failing after final round — no consensus.");
                 return this.result("timeout");
               }
-              // Next round's loop-top transitions ROLE_SWITCH → IMPLEMENTING
               [builder, reviewer] = [reviewer, builder];
               [builderH, reviewerH] = [reviewerH, builderH];
               continue;
@@ -495,8 +494,6 @@ export class Orchestrator {
 
           this.trans("findings_resolved"); // REVISING → VERIFYING
           this.trans("verification_passed"); // VERIFYING → ROLE_SWITCH
-          // Leave state at ROLE_SWITCH; next round's loop-top (or post-loop
-          // final_review_passed) continues from there
         }
 
         [builder, reviewer] = [reviewer, builder];
