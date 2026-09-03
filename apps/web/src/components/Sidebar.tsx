@@ -1,27 +1,31 @@
 "use client";
 
-import { Plus, MessageSquare, Settings, HelpCircle } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { cn, groupSessionsByTime } from "@/lib/utils";
 
 export function Sidebar() {
-  const { agents, sessions, activeSessionId, setActiveSession, openSettings } = useStore();
+  const { agents, sessions, activeSessionId, setActiveSession, openSettings, openArena } = useStore();
   const grouped = groupSessionsByTime(sessions);
 
   return (
     <aside className="w-56 border-r border-border-subtle bg-surface flex flex-col h-full">
       {/* Agents */}
       <div className="p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Agents</span>
-          <button className="p-1 rounded hover:bg-hover-surface text-text-muted hover:text-jade transition-colors">
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <button
+          onClick={() => openArena()}
+          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-jade-light hover:bg-hover-surface transition-colors mb-2"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New Arena
+        </button>
+        <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider block mb-2">Agents</span>
         <div className="space-y-0.5">
           {agents.map((agent) => (
             <button
               key={agent.id}
+              onClick={() => openArena([agent.id])}
+              title={`Run an arena with ${agent.name}`}
               className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm hover:bg-hover-surface transition-colors group"
             >
               <span className={cn(
@@ -29,9 +33,7 @@ export function Sidebar() {
                 agent.status === "online" ? "bg-status-success" : agent.status === "thinking" ? "bg-status-warning" : "bg-text-disabled"
               )} />
               <span className="text-text-primary group-hover:text-text-primary truncate">{agent.name}</span>
-              {agent.provider !== "Multi-agent" && (
-                <span className="ml-auto text-[10px] text-text-disabled font-mono">{agent.provider}</span>
-              )}
+              <span className="ml-auto text-[10px] text-text-disabled font-mono">{agent.provider}</span>
             </button>
           ))}
         </div>
@@ -60,9 +62,14 @@ export function Sidebar() {
                       : "text-text-secondary hover:bg-hover-surface hover:text-text-primary"
                   )}
                 >
-                  {s.type === "arena" && <span className="text-jade text-xs">◈</span>}
-                  {s.type === "chat" && <MessageSquare className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />}
+                  <span className="text-jade text-xs">◈</span>
                   <span className="truncate">{s.title}</span>
+                  {s.status === "interrupted" && (
+                    <span className="ml-auto text-[10px] text-text-disabled flex-shrink-0">interrupted</span>
+                  )}
+                  {s.status === "error" && (
+                    <span className="ml-auto text-[10px] text-text-disabled flex-shrink-0">failed</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -78,10 +85,6 @@ export function Sidebar() {
         >
           <Settings className="w-3.5 h-3.5" />
           Settings
-        </button>
-        <button className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm text-text-muted hover:bg-hover-surface hover:text-text-secondary transition-colors">
-          <HelpCircle className="w-3.5 h-3.5" />
-          Help
         </button>
       </div>
     </aside>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Search, Plus, ArrowRight, Settings, Keyboard, X } from "lucide-react";
+import { Search, Plus, Settings, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 
 interface Command {
@@ -13,21 +13,18 @@ interface Command {
 }
 
 export function CommandPalette() {
-  const { commandPaletteOpen, closeCommandPalette, startArena, openSettings, sessions, setActiveSession } = useStore();
+  const { commandPaletteOpen, closeCommandPalette, openArena, openSettings, sessions, setActiveSession } = useStore();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const commands: Command[] = [
-    { id: "new-arena", label: "New Arena", icon: <Plus className="w-4 h-4" />, action: () => { startArena(["claude", "gpt"], ""); closeCommandPalette(); } },
-    { id: "new-chat", label: "New Conversation", icon: <Plus className="w-4 h-4" />, action: () => closeCommandPalette() },
-    { id: "switch-agent", label: "Switch Agent", icon: <ArrowRight className="w-4 h-4" />, action: () => closeCommandPalette(), shortcut: "⌘A" },
-    { id: "shortcuts", label: "Keyboard Shortcuts", icon: <Keyboard className="w-4 h-4" />, action: () => closeCommandPalette(), shortcut: "⌘/" },
-    { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, action: () => { openSettings(); closeCommandPalette(); }, shortcut: "⌘," },
+    { id: "new-arena", label: "New Arena", icon: <Plus className="w-4 h-4" />, action: () => { openArena(); closeCommandPalette(); } },
+    { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, action: () => { openSettings(); closeCommandPalette(); } },
     ...sessions.map((s) => ({
       id: `session-${s.id}`,
       label: s.title,
-      icon: s.type === "arena" ? <span className="text-jade text-xs">◈</span> : <span className="text-text-muted">○</span>,
+      icon: <span className="text-jade text-xs">◈</span>,
       action: () => { setActiveSession(s.id); closeCommandPalette(); },
     })),
   ];
@@ -78,9 +75,9 @@ export function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeCommandPalette} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in-0 duration-150" onClick={closeCommandPalette} />
       <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-full max-w-md">
-        <div className="bg-elevated border border-border-subtle rounded-2xl shadow-2xl shadow-black/40 overflow-hidden">
+        <div className="bg-elevated border border-border-subtle rounded-2xl shadow-2xl shadow-black/40 overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150 ease-out">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle">
             <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
             <input

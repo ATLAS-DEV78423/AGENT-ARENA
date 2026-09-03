@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, User, Palette, Bot, Cpu, Swords, Keyboard, Shield } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -17,49 +17,22 @@ const CATEGORIES = [
 
 function GeneralSettings() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Default Agent</h3>
-        <p className="text-xs text-text-muted mb-2">Choose which agent to use by default</p>
-        <select className="w-full px-3 py-2 bg-background border border-border-subtle rounded-lg text-sm text-text-primary outline-none focus:border-border-active">
-          <option>Arena (multi-agent)</option>
-          <option>Claude</option>
-          <option>GPT</option>
-          <option>Gemini</option>
-        </select>
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Language</h3>
-        <select className="w-full px-3 py-2 bg-background border border-border-subtle rounded-lg text-sm text-text-primary outline-none focus:border-border-active">
-          <option>English</option>
-          <option>Spanish</option>
-          <option>Japanese</option>
-        </select>
-      </div>
+    <div className="space-y-4">
+      <h3 className="text-sm font-medium text-text-primary mb-1">About</h3>
+      <p className="text-xs text-text-muted leading-relaxed">
+        Agent Arena sends one prompt to two agents, lets them analyse, discuss, plan, and
+        review each other, then reports the outcome honestly — live models when the server
+        can run them, an explicitly labeled demo otherwise.
+      </p>
     </div>
   );
 }
 
 function AppearanceSettings() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Theme</h3>
-        <p className="text-xs text-text-muted mb-2">Agent Arena uses the Osaka Jade dark theme</p>
-        <div className="flex gap-2">
-          <div className="w-16 h-10 rounded-lg bg-[#111C18] border-2 border-jade cursor-pointer" title="Osaka Jade (active)" />
-          <div className="w-16 h-10 rounded-lg bg-gray-900 border border-border-subtle cursor-not-allowed opacity-40" title="Coming soon" />
-        </div>
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Font Size</h3>
-        <input type="range" min="13" max="18" defaultValue="15" className="w-full accent-jade" />
-        <div className="flex justify-between text-[10px] text-text-disabled mt-1">
-          <span>Small</span>
-          <span>Default</span>
-          <span>Large</span>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <h3 className="text-sm font-medium text-text-primary mb-1">Theme</h3>
+      <p className="text-xs text-text-muted">Agent Arena uses the Osaka Jade dark theme. Theming options are not available yet.</p>
     </div>
   );
 }
@@ -69,7 +42,7 @@ function AgentSettings() {
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-medium text-text-primary">Connected Agents</h3>
-      {agents.filter((a) => a.id !== "arena" && a.id !== "judge").map((agent) => (
+      {agents.map((agent) => (
         <div key={agent.id} className="flex items-center justify-between p-3 bg-background rounded-lg border border-border-subtle">
           <div className="flex items-center gap-3">
             <span className={cn(
@@ -104,36 +77,25 @@ function ModelSettings() {
 
 function ArenaSettings() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">Arena Settings</h3>
-        <p className="text-xs text-text-muted mb-4">Configure how the arena evaluates agent responses</p>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm text-text-primary">Max Rounds</label>
-            <input type="number" defaultValue={5} className="w-full mt-1 px-3 py-2 bg-background border border-border-subtle rounded-lg text-sm text-text-primary outline-none focus:border-border-active" />
-          </div>
-          <div>
-            <label className="text-sm text-text-primary">Timeout (minutes)</label>
-            <input type="number" defaultValue={10} className="w-full mt-1 px-3 py-2 bg-background border border-border-subtle rounded-lg text-sm text-text-primary outline-none focus:border-border-active" />
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" defaultChecked className="accent-jade" />
-            <label className="text-sm text-text-primary">Enable judge evaluation</label>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <h3 className="text-sm font-medium text-text-primary mb-1">Arena</h3>
+      <p className="text-xs text-text-muted leading-relaxed">
+        Each arena runs one build/review round within an 8-minute budget. Which agents run
+        live (and which models) is configured on the server via the ARENA_MODELS environment
+        variable; this panel is read-only.
+      </p>
     </div>
   );
 }
 
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const MOD = isMac ? "\u2318" : "Ctrl";
+
 const SHORTCUTS = [
-  { action: "Command palette", keys: "\u2318 K" },
-  { action: "New arena", keys: "\u2318 N" },
-  { action: "Settings", keys: "\u2318 ," },
-  { action: "Search sessions", keys: "\u2318 F" },
-  { action: "Send message", keys: "Enter" },
-  { action: "New line", keys: "Shift + Enter" },
+  { action: "Command palette", keys: "K" },
+  { action: "New arena", keys: "N" },
+  { action: "Search sessions", keys: "F" },
+  { action: "Settings", keys: "," },
 ];
 
 function ShortcutSettings() {
@@ -143,25 +105,49 @@ function ShortcutSettings() {
       {SHORTCUTS.map((item) => (
         <div key={item.action} className="flex items-center justify-between py-2">
           <span className="text-sm text-text-secondary">{item.action}</span>
-          <kbd className="text-[11px] text-text-muted font-mono px-2 py-1 rounded bg-background border border-border-subtle">{item.keys}</kbd>
+          <kbd className="text-[11px] text-text-muted font-mono px-2 py-1 rounded bg-background border border-border-subtle">{MOD} {item.keys}</kbd>
         </div>
       ))}
+      <p className="text-[11px] text-text-disabled pt-2">{MOD} K also opens the palette from anywhere, including while a session is open.</p>
     </div>
   );
 }
 
 function PrivacySettings() {
+  const { clearHistory } = useStore();
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+
   return (
-    <div className="space-y-6">
-      <h3 className="text-sm font-medium text-text-primary mb-3">Privacy</h3>
-      <div className="flex items-center gap-2">
-        <input type="checkbox" defaultChecked className="accent-jade" />
-        <label className="text-sm text-text-primary">Store conversation history locally</label>
-      </div>
-      <div className="flex items-center gap-2">
-        <input type="checkbox" className="accent-jade" />
-        <label className="text-sm text-text-primary">Share usage data to improve Arena</label>
-      </div>
+    <div className="space-y-4">
+      <h3 className="text-sm font-medium text-text-primary mb-1">Privacy</h3>
+      <p className="text-xs text-text-muted leading-relaxed">
+        Session transcripts are stored only in this browser's local storage. Nothing is
+        uploaded or shared.
+      </p>
+      <button
+        onClick={() => {
+          if (!confirming) {
+            setConfirming(true);
+            return;
+          }
+          clearHistory();
+          setConfirming(false);
+        }}
+        className={cn(
+          "px-3 py-1.5 rounded-lg border text-xs transition-colors",
+          confirming
+            ? "bg-red-500/10 border-red-400/50 text-red-400"
+            : "border-border-subtle text-text-secondary hover:text-red-400 hover:border-red-400/40"
+        )}
+      >
+        {confirming ? "Click again to confirm" : "Clear session history"}
+      </button>
     </div>
   );
 }
@@ -170,12 +156,21 @@ export function Settings() {
   const { settingsOpen, closeSettings } = useStore();
   const [activeCategory, setActiveCategory] = useState("general");
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeSettings();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen, closeSettings]);
+
   if (!settingsOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeSettings} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[70vh] bg-elevated border border-border-subtle rounded-2xl shadow-2xl shadow-black/40 flex overflow-hidden">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in-0 duration-150" onClick={closeSettings} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[70vh] bg-elevated border border-border-subtle rounded-2xl shadow-2xl shadow-black/40 flex overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150 ease-out">
         {/* Sidebar */}
         <div className="w-44 border-r border-border-subtle p-2 space-y-0.5 flex-shrink-0">
           <div className="flex items-center justify-between px-3 py-2 mb-2">

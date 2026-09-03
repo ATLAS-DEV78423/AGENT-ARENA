@@ -56,6 +56,7 @@ export interface OrchestratorConfig {
   };
   signal?: AbortSignal;
   onLog?: (msg: string) => void;
+  onEvent?: (event: OrchestratorEvent) => void;
 }
 
 export interface OrchestratorEvent {
@@ -211,15 +212,9 @@ export class Orchestrator {
       this.trans("analysis_complete"); // ENVIRONMENT_CHECK → ANALYZING
       this.emit("analysis.started");
       this.log("Agent A analyzing...");
-      const rA1 = await this.adapterA.sendAndReceive(
-        this.hA,
-        analysisPrompt(this.config.task),
-      );
+      const rA1 = await this.ask("A", "analysis", analysisPrompt(this.config.task));
       this.log("Agent B analyzing...");
-      const rB1 = await this.adapterB.sendAndReceive(
-        this.hB,
-        analysisPrompt(this.config.task),
-      );
+      const rB1 = await this.ask("B", "analysis", analysisPrompt(this.config.task));
       this.trans("analysis_complete"); // ANALYZING → DISCUSSING
       this.emit("analysis.complete", {
         agentA: rA1.content,
@@ -228,20 +223,14 @@ export class Orchestrator {
       this.log("Analysis complete. Starting discussion...");
 
       // 2. Discussion — structured events
-      const discA = await this.adapterA.sendAndReceive(
-        this.hA,
-        discussionPrompt(rB1.content),
-      );
+      const discA = await this.ask("A", "discussion", discussionPrompt(rB1.content));
       this.emit(
         "message.created",
         { messageType: "DISCUSSION", content: discA.content },
         this.adapterA.id,
       );
 
-      const discB = await this.adapterB.sendAndReceive(
-        this.hB,
-        discussionPrompt(rA1.content),
-      );
+      const discB = await this.ask("B", "discussion", discussionPrompt(rA1.content));
       this.emit(
         "message.created",
         { messageType: "DISCUSSION", content: discB.content },
@@ -274,14 +263,8 @@ export class Orchestrator {
 
       // 3. Plan approval
       const planText = discA.kind === "plan_approved" ? discA.content : discB.content;
-      const rAp = await this.adapterA.sendAndReceive(
-        this.hA,
-        planApprovalPrompt(planText),
-      );
-      const rBp = await this.adapterB.sendAndReceive(
-        this.hB,
-        planApprovalPrompt(planText),
-      );
+      const rAp = await this.ask("A", "plan", planApprovalPrompt(planText));
+      const rBp = await this.ask("B", "plan", planApprovalPrompt(planText));
       this.trans("plan_submitted");
 
       if (rAp.kind === "plan_rejected") {
@@ -325,10 +308,8 @@ export class Orchestrator {
       const roles = this.manager.getRoles(this.sid);
       let builder =
         roles[0]!.role === "Builder" ? this.adapterA : this.adapterB;
-      let builderH = builder === this.adapterA ? this.hA : this.hB;
       let reviewer =
         builder === this.adapterA ? this.adapterB : this.adapterA;
-      let reviewerH = reviewer === this.adapterA ? this.hA : this.hB;
       let isFirstRound = true;
 
       for (
@@ -355,8 +336,9 @@ export class Orchestrator {
           builder: builder.id,
           reviewer: reviewer.id,
         });
-        await builder.sendAndReceive(
-          builderH!,
+        await this.ask(
+          builder === this.adapterA ? "A" : "B",
+          "build",
           buildPrompt(this.config.task, planText),
         );
         this.trans("implementation_completed");
@@ -381,8 +363,9 @@ export class Orchestrator {
           // GATE: if verification fails, skip reviewer — send failures to builder
           if (!vResult.passed) {
             this.log("Verification failed — sending failures to builder (skipping reviewer)");
-            await builder.sendAndReceive(
-              builderH!,
+            await this.ask(
+              builder === this.adapterA ? "A" : "B",
+              "fix",
               fixPrompt(verificationResults),
             );
 
@@ -425,7 +408,6 @@ export class Orchestrator {
                 return this.result("timeout");
               }
               [builder, reviewer] = [reviewer, builder];
-              [builderH, reviewerH] = [reviewerH, builderH];
               continue;
             }
           }
@@ -433,8 +415,9 @@ export class Orchestrator {
 
         // Consult reviewer (only when verification passes or no verification configured)
         this.emit("review.started", undefined, reviewer.id);
-        const rev = await reviewer.sendAndReceive(
-          reviewerH!,
+        const rev = await this.ask(
+          reviewer === this.adapterA ? "A" : "B",
+          "review",
           reviewPrompt(this.config.task, verificationResults),
         );
 
@@ -442,14 +425,8 @@ export class Orchestrator {
           this.trans("review_completed");
           this.trans("verification_passed");
 
-          const fA = await this.adapterA.sendAndReceive(
-            this.hA!,
-            finalApprovalPrompt(),
-          );
-          const fB = await this.adapterB.sendAndReceive(
-            this.hB!,
-            finalApprovalPrompt(),
-          );
+          const fA = await this.ask("A", "final", finalApprovalPrompt());
+          const fB = await this.ask("B", "final", finalApprovalPrompt());
           if (
             fA.kind === "final_approved" && fB.kind === "final_approved"
           ) {
@@ -484,8 +461,9 @@ export class Orchestrator {
           );
 
           // Builder resolves findings
-          await builder.sendAndReceive(
-            builderH!,
+          await this.ask(
+            builder === this.adapterA ? "A" : "B",
+            "fix",
             fixPrompt(rev.content),
           );
           this.findingManager.transition(finding.id, "acknowledge");
@@ -497,7 +475,6 @@ export class Orchestrator {
         }
 
         [builder, reviewer] = [reviewer, builder];
-        [builderH, reviewerH] = [reviewerH, builderH];
       }
 
       this.trans("final_review_passed");
@@ -545,6 +522,7 @@ export class Orchestrator {
       timestamp: ts,
     };
     this.events.push(event);
+    this.config.onEvent?.(event);
     if (this.eventStore) {
       const redactedData = this.securityGuard && event.data
         ? this.redactData(event.data)
@@ -569,6 +547,21 @@ export class Orchestrator {
       rounds: this.events.filter((e) => e.type === "round.started").length,
       events: [...this.events],
     };
+  }
+
+  /**
+   * Runs one agent turn, announcing it first so consumers (e.g. a live
+   * progress UI) know which agent is working in which phase.
+   */
+  private async ask(
+    agent: "A" | "B",
+    phase: string,
+    prompt: string,
+  ): Promise<AgentResponse> {
+    const adapter = agent === "A" ? this.adapterA : this.adapterB;
+    const handle = agent === "A" ? this.hA : this.hB;
+    this.emit("agent.thinking", { phase }, adapter.id);
+    return adapter.sendAndReceive(handle!, prompt);
   }
 
   private log(msg: string) {

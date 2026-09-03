@@ -18,7 +18,7 @@
   --jade-soft: #386C57;
   --jade-dark: #214237;
 
-  --text-primary: #F0F0E8;
+  --text-primary: #E1E2C8;
   --text-secondary: #AEB39A;
   --text-muted: #737C6D;
   --text-disabled: #4E5A50;
@@ -134,4 +134,108 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Rendered agent/judge markdown (see Markdown.tsx) */
+.md-content {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+.md-content > :first-child {
+  margin-top: 0;
+}
+.md-content > :last-child {
+  margin-bottom: 0;
+}
+.md-content p {
+  margin: 0 0 0.75rem;
+}
+.md-content p:last-child {
+  margin-bottom: 0;
+}
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.25rem 0 0.5rem;
+}
+.md-content h1 {
+  font-size: 1.125rem;
+}
+.md-content h2 {
+  font-size: 1.0625rem;
+}
+.md-content h3,
+.md-content h4 {
+  font-size: 1rem;
+}
+.md-content ul {
+  list-style: disc;
+  padding-left: 1.375rem;
+  margin: 0 0 0.75rem;
+}
+.md-content ol {
+  list-style: decimal;
+  padding-left: 1.375rem;
+  margin: 0 0 0.75rem;
+}
+.md-content li {
+  margin: 0.25rem 0;
+}
+.md-content li > p {
+  margin: 0;
+}
+.md-content a {
+  color: var(--jade-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-content blockquote {
+  border-left: 2px solid var(--border-active);
+  padding-left: 0.75rem;
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+}
+.md-content hr {
+  border-color: var(--border-subtle);
+  margin: 1rem 0;
+}
+.md-content code {
+  font-family: var(--font-geist-mono);
+  font-size: 0.85em;
+  background: var(--elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.35em;
+  color: var(--jade-light);
+}
+.md-content pre {
+  background: var(--background-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  overflow-x: auto;
+  margin: 0 0 0.75rem;
+}
+.md-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  display: block;
+}
+.md-content-judge,
+.md-content-judge p,
+.md-content-judge li,
+.md-content-judge pre code {
+  color: rgba(112, 184, 149, 0.92);
+}
+.md-content-sm {
+  font-size: 13px;
 }

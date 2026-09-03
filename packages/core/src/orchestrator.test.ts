@@ -115,6 +115,47 @@ describe("Orchestrator - EventStore persistence", () => {
   });
 });
 
+describe("Orchestrator - onEvent consumer hook", () => {
+  it("delivers every emitted event to the onEvent callback", async () => {
+    const a = new FakeOrchestratorAdapter(agentId("a"), "A");
+    const b = new FakeOrchestratorAdapter(agentId("b"), "B");
+    const received: string[] = [];
+    const orch = new Orchestrator(
+      {
+        task: "X",
+        cwd: "/tmp",
+        onEvent: (e) => received.push(e.type),
+      },
+      a,
+      b,
+    );
+    await orch.run();
+
+    expect(received).toContain("session.created");
+    expect(received).toContain("analysis.complete");
+    expect(received).toContain("consensus.reached");
+  });
+
+  it("onEvent payload matches the events recorded in the result", async () => {
+    const a = new FakeOrchestratorAdapter(agentId("a"), "A");
+    const b = new FakeOrchestratorAdapter(agentId("b"), "B");
+    const received: Array<{ type: string; state: string; agentId?: string }> = [];
+    const orch = new Orchestrator(
+      {
+        task: "X",
+        cwd: "/tmp",
+        onEvent: (e) => received.push({ type: e.type, state: e.state, agentId: e.agentId }),
+      },
+      a,
+      b,
+    );
+    const result = await orch.run();
+
+    expect(received).toHaveLength(result.events.length);
+    expect(received[0]?.type).toBe(result.events[0]?.type);
+  });
+});
+
 describe("Orchestrator - structured discussion events", () => {
   it("emits message.created events during discussion", async () => {
     const a = new FakeOrchestratorAdapter(agentId("a"), "A");
@@ -157,6 +198,51 @@ describe("Orchestrator - Finding integration", () => {
     );
     expect(findingEvents.length).toBeGreaterThanOrEqual(1);
     expect(findingEvents[0]?.data?.severity).toBe("blocker");
+  });
+});
+
+describe("Orchestrator - agent.thinking progress events", () => {
+  it("announces every agent turn in order, with a phase, before the call", async () => {
+    // Record the real order of adapter calls across both agents.
+    const order: string[] = [];
+    class RecordingAdapter extends FakeOrchestratorAdapter {
+      override async sendAndReceive(
+        handle: { sessionId: string },
+        message: string,
+      ) {
+        order.push(this.id);
+        return super.sendAndReceive(handle, message);
+      }
+    }
+    const a = new RecordingAdapter(agentId("agent-a"), "Agent A");
+    const b = new RecordingAdapter(agentId("agent-b"), "Agent B");
+    const orch = new Orchestrator(
+      { task: "Build X", cwd: "/tmp", maxRounds: 1 },
+      a,
+      b,
+    );
+    const result = await orch.run();
+
+    const thinking = result.events.filter(
+      (e) => e.type === "agent.thinking",
+    );
+    // One announcement per real adapter call, same agent, same order:
+    // no turn happens without its announcement and no announcement is idle.
+    expect(thinking.length).toBe(order.length);
+    expect(thinking.length).toBeGreaterThan(0);
+    expect(thinking.map((e) => e.agentId)).toEqual(order);
+
+    // Every announcement carries a known phase name.
+    const phases = thinking.map((e) => String(e.data?.phase));
+    for (const phase of phases) {
+      expect([
+        "analysis", "discussion", "plan", "build", "fix", "review", "final",
+      ]).toContain(phase);
+    }
+
+    // Independent analysis runs Agent A first, then Agent B.
+    expect(order[0]).toBe(agentId("agent-a"));
+    expect(order[1]).toBe(agentId("agent-b"));
   });
 });
 

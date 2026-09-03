@@ -2,6 +2,17 @@ import { describe, it, expect, vi } from "vitest";
 import { ClaudeAdapter } from "./claude.js";
 import { sessionId } from "@arena/core";
 
+vi.mock("@arena/pty", () => {
+  class MockPersistentSession {
+    sessionId = "mock-session";
+    pid = 1234;
+    isAlive() { return true; }
+    kill() {}
+    sendAndWait() { return Promise.resolve("ok"); }
+  }
+  return { PersistentSession: MockPersistentSession };
+});
+
 describe("ClaudeAdapter persistent sessions", () => {
   it("implements OrchestratorAdapter interface", () => {
     const adapter = new ClaudeAdapter();
@@ -15,21 +26,10 @@ describe("ClaudeAdapter persistent sessions", () => {
     const adapter = new ClaudeAdapter();
     (adapter as any).detected = true;
 
-    // Mock the factory to return a fake session
-    const mockSession = {
-      sessionId: "mock-session",
-      pid: 1234,
-      sendAndWait: vi.fn().mockResolvedValue("response"),
-      kill: vi.fn(),
-      isAlive: vi.fn().mockReturnValue(true),
-    };
-    const originalModule = await import("./persistent-session-wrapper.js");
-    const spy = vi.spyOn(originalModule, "createPersistentClaude").mockReturnValue(mockSession as any);
-
     const handle = await adapter.start({ task: "test", cwd: "/tmp" });
     expect(handle.sessionId).toBe("mock-session");
     expect(handle.pid).toBe(1234);
-    spy.mockRestore();
+    expect((adapter as any).persistentSessions.size).toBe(1);
   });
 
   it("sends message via PersistentSession and detects response kind", async () => {
@@ -52,7 +52,7 @@ describe("ClaudeAdapter persistent sessions", () => {
     const handle = { sessionId: sessionId("test-persistent"), pid: 1234 };
     const response = await adapter.sendAndReceive(handle, "Review the implementation.");
 
-    expect(mockSession.sendAndWait).toHaveBeenCalledWith("Review the implementation.", 120_000);
+    expect(mockSession.sendAndWait).toHaveBeenCalledWith("Review the implementation.\n__ARENA_PROMPT_END__", 120_000);
     expect(response.kind).toBe("review_approved");
     expect(response.content).toContain("LGTM");
   });

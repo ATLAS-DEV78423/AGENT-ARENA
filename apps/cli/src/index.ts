@@ -9,6 +9,22 @@ import { EventStore } from "@arena/core";
 import { OpenCodeAdapter, AgentRegistry } from "@arena/agents";
 import { loadConfig } from "@arena/config";
 
+// Shared adapter construction for `run` and `resume`.
+function makeAdapters(
+  opts: { fake?: boolean; modelA?: string; modelB?: string },
+  config: Awaited<ReturnType<typeof loadConfig>>,
+): { agentA: OpenCodeAdapter | FakeOrchestratorAdapter; agentB: OpenCodeAdapter | FakeOrchestratorAdapter } {
+  if (opts.fake) {
+    return {
+      agentA: new FakeOrchestratorAdapter(agentId("agent-a"), "Agent A"),
+      agentB: new FakeOrchestratorAdapter(agentId("agent-b"), "Agent B"),
+    };
+  }
+  const modelA = opts.modelA ?? config.agents[0]?.command ?? "claude";
+  const modelB = opts.modelB ?? config.agents[1]?.command ?? "opencode";
+  return { agentA: new OpenCodeAdapter(modelA), agentB: new OpenCodeAdapter(modelB) };
+}
+
 const program = new Command();
 program
   .name("arena")
@@ -79,18 +95,12 @@ program
       // EventStore for persistence
       const eventStore = new EventStore(sessionDir);
 
-      let agentA, agentB;
+      const { agentA, agentB } = makeAdapters(opts, config);
       if (opts.fake) {
-        agentA = new FakeOrchestratorAdapter(agentId("agent-a"), "Agent A");
-        agentB = new FakeOrchestratorAdapter(agentId("agent-b"), "Agent B");
         console.log("Using fake agents");
       } else {
-        const modelA = opts.modelA ?? config.agents[0]?.command ?? "claude";
-        const modelB = opts.modelB ?? config.agents[1]?.command ?? "opencode";
-        agentA = new OpenCodeAdapter(modelA);
-        agentB = new OpenCodeAdapter(modelB);
-        console.log("Agent A: " + modelA);
-        console.log("Agent B: " + modelB);
+        console.log("Agent A: " + (opts.modelA ?? config.agents[0]?.command ?? "claude"));
+        console.log("Agent B: " + (opts.modelB ?? config.agents[1]?.command ?? "opencode"));
       }
       console.log("");
 
@@ -116,10 +126,31 @@ program
           console.log("  Not a git repository — using direct workspace strategy");
         }
       }
+      // Only run the test gate when the project actually has a test script,
+      // and use whatever package manager is available
+      let hasTestScript = false;
+      try {
+        const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
+        hasTestScript = Boolean(pkg?.scripts?.test);
+      } catch {
+        // no package.json — nothing to verify
+      }
+      const canRun = (cmd: string) => {
+        try {
+          execSync(cmd + " --version", { stdio: "ignore", timeout: 5000 });
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const runner = canRun("pnpm") ? "pnpm" : "npm";
       const verification =
-        opts.verify !== false && config.verification.runTests
-          ? { commands: [{ name: "test", cmd: "pnpm", args: ["test"] }] }
+        opts.verify !== false && config.verification.runTests && hasTestScript
+          ? { commands: [{ name: "test", cmd: runner, args: ["test"] }] }
           : undefined;
+      if (!hasTestScript && opts.verify !== false && config.verification.runTests) {
+        console.log("  No test script in this project — skipping verification gate");
+      }
 
       const orch = new Orchestrator(
         {
@@ -277,16 +308,7 @@ program
     const config = await loadConfig(cwd);
     const eventStore = new EventStore(sessionDir);
 
-    let agentA, agentB;
-    if (opts.fake) {
-      agentA = new FakeOrchestratorAdapter(agentId("agent-a"), "Agent A");
-      agentB = new FakeOrchestratorAdapter(agentId("agent-b"), "Agent B");
-    } else {
-      const modelA = config.agents[0]?.command ?? "claude";
-      const modelB = config.agents[1]?.command ?? "opencode";
-      agentA = new OpenCodeAdapter(modelA);
-      agentB = new OpenCodeAdapter(modelB);
-    }
+    const { agentA, agentB } = makeAdapters({ fake: opts.fake }, config);
 
     const maxRounds = parseInt(opts.rounds, 10) || config.debate.maxRounds;
     const orch = new Orchestrator(

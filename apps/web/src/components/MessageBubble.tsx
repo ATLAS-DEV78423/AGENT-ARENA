@@ -1,6 +1,7 @@
 "use client";
 
 import { Message } from "@/lib/types";
+import { Markdown } from "./Markdown";
 
 function AgentAvatar({ agentName, role }: { agentName?: string; role: string }) {
   const initials = agentName?.slice(0, 2) || (role === "user" ? "U" : "A");
@@ -27,7 +28,9 @@ export function MessageBubble({ message }: { message: Message }) {
     return (
       <div className="flex justify-end mb-6">
         <div className="max-w-[80%]">
-          <p className="text-text-primary text-[15px] leading-relaxed text-right">{message.content}</p>
+          <div className="inline-block bg-elevated border border-border-subtle rounded-2xl rounded-br-md px-4 py-2.5">
+            <p className="text-text-primary text-[15px] leading-relaxed text-left whitespace-pre-wrap break-words">{message.content}</p>
+          </div>
           <p className="text-[11px] text-text-disabled mt-1 text-right">
             {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
@@ -57,9 +60,7 @@ export function MessageBubble({ message }: { message: Message }) {
             {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
         </div>
-        <div className={`text-[15px] leading-relaxed whitespace-pre-wrap ${isJudge ? "text-jade-light/90" : "text-text-primary"}`}>
-          {message.content}
-        </div>
+        <Markdown content={message.content} tone={isJudge ? "judge" : "default"} />
       </div>
     </div>
   );
