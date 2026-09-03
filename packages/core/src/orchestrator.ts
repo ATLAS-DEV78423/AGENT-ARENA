@@ -54,6 +54,7 @@ export interface OrchestratorConfig {
   workspace?: {
     strategy: "direct" | "worktree";
   };
+  signal?: AbortSignal;
   onLog?: (msg: string) => void;
 }
 
@@ -155,7 +156,12 @@ export class Orchestrator {
   }
 
   async run(): Promise<OrchestratorResult> {
+    const signal = this.config.signal;
+    const checkAborted = () => {
+      if (signal?.aborted) throw new Error("SIGINT");
+    };
     try {
+      checkAborted();
       const s = await this.manager.createSession({
         task: this.config.task,
         agentA: this.adapterA.id,
@@ -172,9 +178,10 @@ export class Orchestrator {
       this.emit("session.initialized");
 
       // Create worktrees if configured, otherwise use cwd directly
+      // (push to activeWorktrees immediately so a later failure still cleans up)
       const wtA = this.worktreeManager ? this.worktreeManager.create(this.adapterA.id) : null;
-      const wtB = this.worktreeManager ? this.worktreeManager.create(this.adapterB.id) : null;
       if (wtA) this.activeWorktrees.push(wtA);
+      const wtB = this.worktreeManager ? this.worktreeManager.create(this.adapterB.id) : null;
       if (wtB) this.activeWorktrees.push(wtB);
       const agentCwdA = wtA?.path ?? this.config.cwd;
       const agentCwdB = wtB?.path ?? this.config.cwd;
@@ -201,6 +208,8 @@ export class Orchestrator {
       this.log("Both agents launched.");
 
       // 1. Independent analysis
+      this.trans("analysis_complete"); // ENVIRONMENT_CHECK → ANALYZING
+      this.emit("analysis.started");
       this.log("Agent A analyzing...");
       const rA1 = await this.adapterA.sendAndReceive(
         this.hA,
@@ -211,9 +220,7 @@ export class Orchestrator {
         this.hB,
         analysisPrompt(this.config.task),
       );
-      this.trans("analysis_complete");
-      this.emit("analysis.started");
-      this.trans("analysis_complete");
+      this.trans("analysis_complete"); // ANALYZING → DISCUSSING
       this.emit("analysis.complete", {
         agentA: rA1.content,
         agentB: rB1.content,
@@ -329,17 +336,19 @@ export class Orchestrator {
         round < (this.config.maxRounds ?? 3);
         round++
       ) {
-        if (!this.budget.canProceed()) {
-          this.log("Budget exceeded — stopping.");
-          this.trans("timeout");
-          return this.result("timeout");
-        }
-        this.budget.recordRound();
+        checkAborted();
+        // Round starts: ROLE_SWITCH → IMPLEMENTING (first round is already IMPLEMENTING after plan approval)
         if (isFirstRound) {
           isFirstRound = false;
         } else {
           this.trans("implementation_started");
         }
+        if (!this.budget.canProceed()) {
+          this.log("Budget exceeded — stopping.");
+          this.trans("timeout"); // legal from IMPLEMENTING
+          return this.result("timeout");
+        }
+        this.budget.recordRound();
         this.emit("round.started", {
           round: round + 1,
           builder: builder.id,
@@ -408,10 +417,14 @@ export class Orchestrator {
                 severity: finding.severity,
                 claim: finding.claim,
               }, reviewer.id);
-              this.trans("findings_resolved");
-              if (round < (this.config.maxRounds ?? 3) - 1) {
-                this.trans("implementation_started");
+              this.trans("findings_resolved"); // REVISING → VERIFYING
+              this.trans("verification_passed"); // VERIFYING → ROLE_SWITCH
+              if (round === (this.config.maxRounds ?? 3) - 1) {
+                // Exhausted all rounds with verification still failing — no consensus claim
+                this.log("Verification still failing after final round — no consensus.");
+                return this.result("timeout");
               }
+              // Next round's loop-top transitions ROLE_SWITCH → IMPLEMENTING
               [builder, reviewer] = [reviewer, builder];
               [builderH, reviewerH] = [reviewerH, builderH];
               continue;
@@ -446,8 +459,8 @@ export class Orchestrator {
             this.emit("consensus.reached");
             return this.result("consensus");
           }
-          // Not final — continue to next round
-          this.trans("implementation_started");
+          // Not final — leave state at ROLE_SWITCH; next round's loop-top
+          // transitions ROLE_SWITCH → IMPLEMENTING
         } else {
           // findings_presented from REVIEWING → REVISING (not review_completed first)
           this.trans("findings_presented");
@@ -480,11 +493,10 @@ export class Orchestrator {
           this.findingManager.transition(finding.id, "accept");
           this.findingManager.transition(finding.id, "fix");
 
-          this.trans("findings_resolved");
-          this.trans("verification_passed");
-          if (round < (this.config.maxRounds ?? 3) - 1) {
-            this.trans("implementation_started");
-          }
+          this.trans("findings_resolved"); // REVISING → VERIFYING
+          this.trans("verification_passed"); // VERIFYING → ROLE_SWITCH
+          // Leave state at ROLE_SWITCH; next round's loop-top (or post-loop
+          // final_review_passed) continues from there
         }
 
         [builder, reviewer] = [reviewer, builder];
@@ -495,8 +507,18 @@ export class Orchestrator {
       this.trans("consensus_reached");
       return this.result("consensus");
     } catch (error) {
-      this.emit("error", { error: String(error) });
       this.log("ERROR: " + String(error));
+      if (!this.sid) {
+        // Aborted before session creation — nothing to clean up
+        return {
+          sessionId: "" as SessionId,
+          state: "FAILED" as ArenaState,
+          outcome: "error",
+          rounds: 0,
+          events: [...this.events],
+        };
+      }
+      this.emit("error", { error: String(error) });
       return this.result("error");
     } finally {
       if (this.hA) await this.adapterA.terminate(this.hA).catch(() => {});

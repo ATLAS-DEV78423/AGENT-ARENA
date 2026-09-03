@@ -1,8 +1,8 @@
-# Arena
+# Agent Arena
 
 **Competitive AI collaboration for serious work.**
 
-Arena launches two independent AI coding agents into a structured competitive-collaboration protocol. They analyze, discuss, plan, build, review, and challenge each other — producing better results than either agent alone.
+Agent Arena launches two AI coding agents into a structured competitive-collaboration protocol. They analyze, discuss, plan, build, review, and challenge each other — producing better results than either agent alone — then a judge-style final approval gates the result.
 
 ```
 Don't trust one AI. Make them check each other.
@@ -11,15 +11,39 @@ Don't trust one AI. Make them check each other.
 ## Quick Start
 
 ```bash
-# Install
-npm install -g arena-cli
+# Install and build the monorepo (Node.js >= 20, pnpm >= 9)
+pnpm install && pnpm build
 
-# Run with fake agents (no API keys needed)
-arena "Build a secure JWT authentication system" --fake
+# Run a session with fake agents (no API keys or agent CLIs needed)
+pnpm --filter arena-cli start -- run "Design a rate limiter" --fake
 
-# Run with real agents
-arena "Fix the bug in this repository"
+# Or via the built CLI directly
+node apps/cli/dist/index.js run "Design a rate limiter" --fake
 ```
+
+Real agents (Claude Code, OpenCode, or any CLI agent) work the same way — drop the `--fake` flag:
+
+```bash
+node apps/cli/dist/index.js run "Fix the bug in this repository" --no-verify
+```
+
+> `--no-verify` disables the test/typecheck gate for non-Node projects. Verification
+> runs `pnpm test` after each build round and is **enforced** — a failing suite is
+> sent back to the builder and the reviewer is only consulted once verification passes.
+
+## Web App
+
+A local web UI (`apps/web`) wraps the same orchestrator over an SSE API:
+
+```bash
+cd apps/web
+pnpm install && pnpm dev   # http://localhost:3000
+```
+
+Choose agents, run an Arena, and watch analysis → discussion → review stream in
+real time. The API route (`apps/web/src/app/api/arena`) drives the real
+`Orchestrator` from `@arena/core`; swap `FakeOrchestratorAdapter` for
+`ClaudeAdapter`/`OpenCodeAdapter` to use live agents.
 
 ## How It Works
 
@@ -27,22 +51,42 @@ arena "Fix the bug in this repository"
 2. **Discussion** — They exchange analyses and debate approach
 3. **Joint Plan** — They create a shared plan; both must approve
 4. **Build/Review Loop** — One builds, the other reviews adversarially
-5. **Role Reversal** — Builder becomes Reviewer, Reviewer becomes Builder
-6. **Consensus** — Both agents approve the final result, or escalate to you
+5. **Verification Gate** — Failing tests/typechecks go back to the builder; the reviewer is only consulted when checks pass
+6. **Role Reversal** — Builder becomes Reviewer, Reviewer becomes Builder
+7. **Consensus** — Both agents approve the final result, or the session escalates/times out honestly
 
-## Commands
+The runtime — not the LLM — owns state transitions, round limits, budget, and
+finalization (`packages/core/src/types/state-machine.ts`).
+
+## CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `arena run <task>` | Start a session with two AI agents |
-| `arena doctor` | Diagnose your environment |
+| `arena doctor` | Diagnose your environment (node, pnpm, git, agent CLIs) |
 | `arena agents` | List detected agent adapters |
 | `arena sessions` | List past sessions |
-| `arena inspect <id>` | Inspect a past session's events |
+| `arena inspect <id>` | Inspect a past session's result + protocol events |
+| `arena resume <id>` | Re-run a timed-out/failed session from its saved task |
+
+Options for `arena run`:
+
+| Flag | Description |
+|------|-------------|
+| `--fake` | Use fake agents (no external CLI needed) |
+| `--model-a <cmd>` / `--model-b <cmd>` | Agent command per side |
+| `--rounds <n>` | Max build/review rounds (default 5) |
+| `--security <profile>` | `inherit` \| `restricted` \| `isolated` |
+| `--workspace <strategy>` | `direct` \| `worktree` (git worktrees isolate each agent's copy; falls back to `direct` outside a git repo) |
+| `--no-verify` | Skip the test/typecheck verification gate |
+
+**Interrupting a session:** `Ctrl+C` triggers a graceful shutdown — child agents are
+terminated, worktrees cleaned up, and the partial session (events + result) is
+preserved under `.arena/sessions/`. Sessions are safe to `resume` afterwards.
 
 ## Configuration
 
-Create `.arena/config.yaml` in your project root:
+Create `.arena/config.yaml` (or `.arena/config.json`) in your project root:
 
 ```yaml
 agents:
@@ -61,7 +105,7 @@ verification:
   requireCleanReview: true
 
 workspace:
-  strategy: worktree  # direct | worktree | copy
+  strategy: direct  # direct | worktree
 
 security:
   profile: inherit  # inherit | restricted | isolated
@@ -70,50 +114,15 @@ logging:
   level: info
 ```
 
-## Supported Agents
+Every value has a sane default — the file is optional.
 
-Arena works with any CLI-based AI coding agent:
+## Security
 
-- **Claude Code** (`claude`) — Anthropic's coding agent
-- **OpenCode** (`opencode`) — Open-source coding agent
-- **Generic CLI** — Any agent that reads from stdin and writes to stdout
+Three layers (`packages/policy`):
 
-## Architecture
-
-```
-arena/
-├── packages/
-│   ├── core/          State machine, orchestrator, session, types
-│   ├── agents/        Agent adapters (Claude, OpenCode, Generic, Fake)
-│   ├── pty/           Persistent sessions, delimiter-based communication
-│   ├── config/        YAML/JSON config loading with Zod validation
-│   ├── workspace/     Git detection, worktree isolation
-│   ├── policy/        Path validation, security
-│   ├── verification/  Test runner, lint, build checks
-│   └── logging/       Structured logging with Pino
-├── apps/
-│   └── cli/           Commander.js CLI entry point
-└── reference md's/    Product blueprint and agent instruction pack
-```
-
-## Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run all tests
-pnpm test
-
-# Build all packages
-pnpm build
-
-# Type check
-pnpm typecheck
-
-# Lint
-pnpm lint
-```
+- **CommandPolicy** — allow/blocklist for agent shell commands, shell-metacharacter detection
+- **SecretRedactor** — strips API keys, tokens, and credentials from agent output and logs
+- **SecurityGuard** — enforces a profile (`inherit`/`restricted`/`isolated`) over command policy + redaction; orchestrator logs and persisted events are redacted before they hit disk
 
 ## Session Storage
 
@@ -123,17 +132,48 @@ Sessions are saved to `.arena/sessions/`:
 .arena/
 └── sessions/
     └── session-1234567890/
-        ├── result.json        Outcome, rounds, task
-        └── session-xxx.jsonl  All protocol events (JSONL)
+        ├── result.json          Outcome, rounds, task, state
+        └── session-<uuid>.jsonl Protocol events (redacted), JSONL
+```
+
+## Architecture
+
+```
+├── packages/
+│   ├── core/          State machine, orchestrator, session, findings, budget, event store
+│   ├── agents/        Agent adapters (Claude, OpenCode, Generic, Fake) — persistent relay sessions
+│   ├── pty/           Persistent child-process sessions, delimiter protocol
+│   ├── config/        YAML/JSON config loading with Zod validation
+│   ├── workspace/     Git detection, worktree isolation
+│   ├── policy/        Command policy, secret redaction, security guard
+│   ├── verification/  Test/typecheck runner used as the build gate
+│   └── logging/       Structured logging (Pino)
+├── apps/
+│   ├── cli/           Commander.js CLI entry point
+│   └── web/           Next.js web UI (Osaka Jade design, SSE arena streaming)
+└── reference md's/    Product blueprint + agent instruction pack
+```
+
+Layering rule: `core` never depends on `agents`/`pty`/`cli`; `agents` depends on
+`core` only. Provider adapters live in `packages/agents/src/<provider>/`.
+
+## Development
+
+```bash
+pnpm install
+pnpm test        # vitest, all packages
+pnpm typecheck   # tsc --noEmit per package
+pnpm build       # emit dist per package
 ```
 
 ## Key Design Decisions
 
-- **Local-first** — No data leaves your machine unless you opt in
-- **Provider-neutral** — Works with any CLI agent, not locked to one provider
-- **Deterministic orchestration** — The runtime controls state, not the LLM
-- **Evidence over confidence** — Agents must provide evidence, not just claims
-- **Structured findings** — Review findings have severity, evidence, and lifecycle
+- **Local-first** — no data leaves your machine unless you opt in
+- **Provider-neutral** — works with any CLI agent, not locked to one provider
+- **Deterministic orchestration** — the runtime controls state, not the LLM
+- **Evidence over confidence** — verification results gate the reviewer; agents must provide evidence, not claims
+- **Structured findings** — review findings carry severity, evidence, and a lifecycle
+- **Honest outcomes** — exhausted rounds or failing verification end as `timeout`, never a fabricated `consensus`
 
 ## License
 

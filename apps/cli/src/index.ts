@@ -50,10 +50,12 @@ program
   .option("--model-b <model>", "Model for Agent B")
   .option("--rounds <n>", "Max rounds", "5")
   .option("--security <profile>", "Security profile: inherit, restricted, isolated")
+  .option("--no-verify", "Disable verification (test/lint/typecheck)")
+  .option("--workspace <strategy>", "Workspace strategy: direct, worktree")
   .action(
     async (
       task: string,
-      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string; security?: string },
+      opts: { fake?: boolean; modelA?: string; modelB?: string; rounds: string; security?: string; verify: boolean; workspace?: string },
     ) => {
       const cwd = process.cwd();
       const config = await loadConfig(cwd);
@@ -95,6 +97,31 @@ program
 
       const maxRounds = parseInt(opts.rounds, 10) || config.debate.maxRounds;
       const securityProfile = (opts.security ?? config.security.profile) as "inherit" | "restricted" | "isolated";
+      const abortController = new AbortController();
+
+      // Graceful SIGINT: abort orchestrator, let finally block clean up
+      const onSigint = () => {
+        console.log("\n  Interrupted — shutting down gracefully...");
+        abortController.abort();
+      };
+      process.on("SIGINT", onSigint);
+
+      let workspaceStrategy = (opts.workspace ?? config.workspace.strategy) as "direct" | "worktree";
+      if (workspaceStrategy === "worktree") {
+        // git worktree requires a git repo — fall back to direct otherwise
+        try {
+          execSync("git rev-parse --is-inside-work-tree", { encoding: "utf-8", stdio: "ignore", timeout: 5000, cwd });
+        } catch {
+          workspaceStrategy = "direct";
+          console.log("  Not a git repository — falling back to direct workspace strategy");
+        }
+      }
+      const verification = opts.verify !== false ? {
+        commands: [
+          ...(config.verification.runTests ? [{ name: "test", cmd: "pnpm", args: ["test"] }] : []),
+        ],
+      } : undefined;
+
       const orch = new Orchestrator(
         {
           task,
@@ -102,7 +129,10 @@ program
           maxRounds,
           maxMinutes: config.debate.maxMinutes,
           maxRepeatedObjections: config.debate.maxRepeatedObjections,
+          verification,
           security: { profile: securityProfile },
+          workspace: { strategy: workspaceStrategy },
+          signal: abortController.signal,
           onLog: (msg) => console.log("  " + msg),
         },
         agentA,
@@ -112,8 +142,10 @@ program
       );
 
       const result = await orch.run();
+      process.off("SIGINT", onSigint);
 
-      // Save session result
+      // Save session result (preserved even on interrupt)
+      const wasInterrupted = result.outcome === "error" && abortController.signal.aborted;
       writeFileSync(
         join(sessionDir, "result.json"),
         JSON.stringify(
@@ -124,6 +156,7 @@ program
             rounds: result.rounds,
             task,
             timestamp: new Date().toISOString(),
+            ...(wasInterrupted ? { interrupted: true } : {}),
           },
           null,
           2,
@@ -131,6 +164,11 @@ program
       );
 
       console.log("");
+      if (wasInterrupted) {
+        console.log("Session interrupted. Events preserved in:");
+        console.log("  " + sessionDir);
+        console.log("");
+      }
       console.log("╔══════════════════════════════════════════╗");
       console.log("║  RESULT                                  ║");
       console.log("╠══════════════════════════════════════════╣");

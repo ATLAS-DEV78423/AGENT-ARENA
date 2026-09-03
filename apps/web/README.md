@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agent Arena — Web UI
 
-## Getting Started
+The Agent Arena desktop web application: a premium, minimalist chat surface
+(Osaka Jade palette) for running multi-agent arena sessions against the
+`@arena/core` orchestrator.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Production:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm build && pnpm start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## What's Inside
 
-## Learn More
+- **Arena mode** — pick agents (Claude, GPT, Gemini, Qwen, or any registered
+  adapter), send one prompt, watch each agent respond.
+- **Live streaming** — `POST /api/arena` opens an SSE stream driven by the real
+  `Orchestrator`; analysis, discussion, and consensus events render as they fire.
+  Falls back to mock responses if the API is unavailable.
+- **Judge/evaluation** — final consensus message closes the session.
+- **Command palette** (`⌘K`), settings, session history, agent selector.
 
-To learn more about Next.js, take a look at the following resources:
+## Wiring
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/app/api/arena/route.ts   POST /api/arena (SSE) + GET session list
+src/app/api/arena/[id]/      Per-session status (GET)
+src/lib/store.ts             Zustand store → fetches API, streams SSE
+src/lib/mock-data.ts         Fallback agents/sessions/responses
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The API route currently uses `FakeOrchestratorAdapter`. To use real agents,
+swap in `ClaudeAdapter` / `OpenCodeAdapter` from `@arena/agents` and pass the
+requested agent commands through config.
 
-## Deploy on Vercel
+## Design System
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Tokens live in `src/app/globals.css`:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Surfaces: `#111C18` → `#1B2923` (dark neutral greens)
+- Text: `#F0F0E8` primary, warm secondary/muted tones
+- Accent: jade `#509475` — used sparingly (~5% of the UI)
+- Status: restrained success/warning/error hues
+
+Typography is Inter-class sans (15–16px chat text) with mono for metadata and
+model names. No bright neon, no pure white, no heavy shadows — depth comes from
+surface changes and spacing.
