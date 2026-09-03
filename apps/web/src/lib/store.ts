@@ -135,7 +135,9 @@ export const useStore = create<ArenaStore>((set, get) => ({
                               id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                               role: data.role as "arena" | "judge",
                               agentId: data.agentId,
-                              agentName: agentNames[data.agentId] || data.agentId || data.role,
+                              agentName: data.role === "judge"
+                                ? "Judge"
+                                : agentNames[data.agentId] || data.agentId || data.role,
                               content: data.content,
                               timestamp: new Date(),
                             },
