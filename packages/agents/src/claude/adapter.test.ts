@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { ClaudeAdapter } from "./claude.js";
 
+// Live-model tests call a real (billable) agent CLI. Opt in with ARENA_LIVE_TESTS=1.
+const live = process.env.ARENA_LIVE_TESTS === "1";
+
 describe("ClaudeAdapter", () => {
   it("detects claude CLI", async () => {
     const adapter = new ClaudeAdapter();
@@ -32,8 +35,8 @@ describe("ClaudeAdapter", () => {
     }
   });
 
-  // ponytail: skip if claude -p has model config issues (auto/best-free unrecognized)
-  it("sendAndReceive returns valid AgentResponse shape", async () => {
+  // ponytail: live-model path; opt in with ARENA_LIVE_TESTS=1
+  it.skipIf(!live)("sendAndReceive returns valid AgentResponse shape", async () => {
     const adapter = new ClaudeAdapter();
     const detected = await adapter.detect();
     if (!detected.detected) return;

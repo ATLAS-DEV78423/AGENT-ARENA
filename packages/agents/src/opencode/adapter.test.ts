@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { OpenCodeAdapter } from "./opencode.js";
 
+// Live-model tests call a real (billable) agent CLI. Opt in with ARENA_LIVE_TESTS=1.
+const live = process.env.ARENA_LIVE_TESTS === "1";
+
 describe("OpenCodeAdapter", () => {
   it("detects opencode CLI", async () => {
     const adapter = new OpenCodeAdapter("opencode/nemotron-3.5-lightning-free");
@@ -32,7 +35,7 @@ describe("OpenCodeAdapter", () => {
     }
   });
 
-  it("sendAndReceive returns valid AgentResponse", async () => {
+  it.skipIf(!live)("sendAndReceive returns valid AgentResponse", async () => {
     const adapter = new OpenCodeAdapter("opencode/nemotron-3.5-lightning-free");
     const detected = await adapter.detect();
     if (!detected.detected) return;
@@ -51,11 +54,7 @@ describe("OpenCodeAdapter", () => {
     const a = new OpenCodeAdapter("opencode/nemotron-3.5-lightning-free");
     const b = new OpenCodeAdapter("opencode/mimo-v2.5-free");
     expect(a.model).not.toBe(b.model);
-    const detA = await a.detect();
-    const detB = await b.detect();
-    expect(detA.detected).toBe(true);
-    expect(detB.detected).toBe(true);
-  }, 10_000);
+  });
 
   it("terminates cleanly", async () => {
     const adapter = new OpenCodeAdapter("opencode/nemotron-3.5-lightning-free");

@@ -2,19 +2,23 @@
 
 ## How to reproduce artifacts
 
-The web app is a Next.js 14 project in `apps/web/`. Dependencies are installed in `apps/web/node_modules/`.
+The web app is a Next.js project in `apps/web/`, managed by the pnpm workspace at the repo root. Install everything with:
 
-Workspace packages are symlinked in `apps/web/node_modules/@arena/` for API route imports.
+```bash
+pnpm install
+```
 
-No env files needed — the app runs standalone with the orchestrator using FakeOrchestratorAdapter.
+No env files needed — the app runs standalone with the orchestrator using FakeOrchestratorAdapter. `@arena/core` is a declared `workspace:*` dependency, so `pnpm install` links it automatically.
 
 ## How to run the server
 
 ```bash
-# Build first (required for API routes to resolve workspace packages)
-cd apps/web && npx next build
+# Build backend packages first (API routes import @arena/core dist)
+pnpm --filter '@arena/*' build
 
-# Then start
+# Build + start the web app
+cd apps/web
+npx next build
 npx next start -p 3000
 ```
 
