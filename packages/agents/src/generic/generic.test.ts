@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { tmpdir } from "node:os";
 import { GenericAgentAdapter } from "./generic.js";
 
 // Simple echo agent for testing
@@ -48,7 +49,7 @@ describe("GenericAgentAdapter", () => {
       command: "node",
       args: ["-e", ECHO_SCRIPT],
     });
-    const handle = await adapter.start({ task: "X", cwd: "/tmp" });
+    const handle = await adapter.start({ task: "X", cwd: tmpdir() });
     expect(handle.sessionId).toBeTruthy();
     expect(handle.pid).toBeGreaterThan(0);
     await adapter.terminate(handle);

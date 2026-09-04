@@ -42,6 +42,14 @@ export class PersistentSession {
     this.child = spawn(config.command, config.args ?? [], opts);
     this.pid = this.child.pid ?? 0;
 
+    // A failed spawn (bad cwd, missing binary) never fires "exit" — without
+    // this, the session reports alive and kill() throws EINVAL on the
+    // never-spawned handle.
+    this.child.on("error", () => {
+      this.alive = false;
+      for (const cb of this.exitCallbacks) cb();
+    });
+
     this.child.stdout?.on("data", (d: Buffer) => {
       this.buffer.append(d.toString());
       this.resolveIfReady();
@@ -120,7 +128,10 @@ export class PersistentSession {
   }
 
   kill(signal?: NodeJS.Signals): void {
-    if (this.alive) this.child.kill(signal);
+    // A spawn that has failed/never started (pid 0) has no OS handle —
+    // kill() would throw EINVAL on it. Nothing to kill.
+    if (this.alive && this.pid > 0) this.child.kill(signal);
+    this.alive = false;
   }
 
   onExit(cb: () => void): void {

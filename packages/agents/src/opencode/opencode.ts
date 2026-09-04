@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentId, agentId } from "@arena/core";
@@ -31,35 +31,31 @@ export class OpenCodeAdapter extends PersistentRelayAdapter {
   // Fallback one-shot mode when the persistent relay cannot start
   protected runOneShot(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const cmd = `${OPENCODE_COMMAND} run -m ${this.model} --pure --dir ${process.cwd()}`;
-      const child = exec(cmd, {
-        timeout: 120_000,
-        cwd: process.cwd(),
-        maxBuffer: 1024 * 1024,
-      });
+      // execFile (no shell) — exec() built a shell string with the model
+      // name interpolated into it, an injection surface and a Windows
+      // git-bash-association hang.
+      const child = execFile(
+        OPENCODE_COMMAND,
+        ["run", "-m", this.model, "--pure", "--dir", process.cwd()],
+        {
+          timeout: 120_000,
+          cwd: process.cwd(),
+          maxBuffer: 1024 * 1024,
+        },
+        (err, stdout, stderr) => {
+          const cleaned = stdout.replace(/^>.*\n+/, "").trim();
+          if (cleaned.length > 0) {
+            resolve(cleaned);
+          } else if (err && stderr) {
+            reject(new Error(stderr.trim()));
+          } else {
+            resolve(stdout.trim());
+          }
+        },
+      );
 
       child.stdin?.write(prompt);
       child.stdin?.end();
-
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
-      child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-      child.on("close", (code) => {
-        const cleaned = stdout.replace(/^>.*\n+/, "").trim();
-        if (cleaned.length > 0) {
-          resolve(cleaned);
-        } else if (code !== 0 && stderr) {
-          reject(new Error(stderr.trim()));
-        } else {
-          resolve(stdout.trim());
-        }
-      });
-
-      child.on("error", (err) => {
-        reject(err);
-      });
     });
   }
 }

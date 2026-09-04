@@ -7,3 +7,8 @@ dist/
 .env.local
 coverage/
 .freebuff/*.log
+ECC/
+.wt-probe/
+.wt-probe2/
+.arena-worktree-test/
+.superpowers/

@@ -146,7 +146,7 @@ program
       const runner = canRun("pnpm") ? "pnpm" : "npm";
       const verification =
         opts.verify !== false && config.verification.runTests && hasTestScript
-          ? { commands: [{ name: "test", cmd: runner, args: ["test"] }] }
+          ? { commands: [{ name: "test", cmd: runner, args: ["test"], timeoutMs: 300_000 }] }
           : undefined;
       if (!hasTestScript && opts.verify !== false && config.verification.runTests) {
         console.log("  No test script in this project — skipping verification gate");

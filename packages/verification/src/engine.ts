@@ -47,24 +47,45 @@ export class VerificationEngine {
   private runCommand(cwd: string, cmd: VerificationCommand): Promise<CheckResult> {
     const start = Date.now();
     return new Promise((resolve) => {
-      const child = execFile(cmd.cmd, cmd.args ?? [], {
-        cwd,
-        timeout: cmd.timeoutMs ?? 30_000,
-        maxBuffer: 1024 * 1024,
-      });
+      // On win32, global package-manager shims (pnpm, yarn) are .cmd files —
+      // execFile(name) ENOENTs on them. Routing through cmd /c resolves the
+      // shim while keeping stdout/stderr as separate pipes (unlike
+      // shell:true, which merges them). Args are our own config strings, not
+      // agent output, so there is no injection surface.
+      const isWin = process.platform === "win32";
+      const child = isWin
+        ? execFile("cmd", ["/c", cmd.cmd, ...(cmd.args ?? [])], {
+            cwd,
+            timeout: cmd.timeoutMs ?? 30_000,
+            maxBuffer: 1024 * 1024,
+          })
+        : execFile(cmd.cmd, cmd.args ?? [], {
+            cwd,
+            timeout: cmd.timeoutMs ?? 30_000,
+            maxBuffer: 1024 * 1024,
+          });
 
       let stdout = "";
       let stderr = "";
       child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
       child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
 
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
         resolve({
           name: cmd.name,
           passed: code === 0,
           exitCode: code ?? 1,
           stdout,
           stderr,
+          // cmd /c reports a missing command as exit 1 with the shell's
+          // "not recognized" text on stderr rather than an error event —
+          // surface both paths as error.
+          error:
+            signal
+              ? `terminated by ${signal}`
+              : code !== 0 && code !== null && !stdout
+                ? stderr.trim() || `exited with code ${code}`
+                : undefined,
           durationMs: Date.now() - start,
         });
       });
