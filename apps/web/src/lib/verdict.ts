@@ -26,7 +26,11 @@ export function buildVerdictCard(
         citations.push("Plan approved by both agents");
         break;
       case "plan-rejected":
-        citations.push("Plan was rejected");
+        citations.push(
+          receipt.noResponse && receipt.agentName
+            ? `Plan was rejected — ${receipt.agentName} did not respond in time`
+            : "Plan was rejected",
+        );
         break;
       case "deadlock":
         citations.push("Agents deadlocked on repeated objections");

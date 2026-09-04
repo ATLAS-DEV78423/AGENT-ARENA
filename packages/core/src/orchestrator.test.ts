@@ -35,6 +35,20 @@ describe("Orchestrator - full protocol", () => {
     ).toBe(true);
   });
 
+  it("attributes a plan rejection to the side that stayed silent", async () => {
+    const a = new FakeOrchestratorAdapter(agentId("a"), "A");
+    const b = new FakeOrchestratorAdapter(agentId("b"), "B", [
+      { trigger: "independently", response: { kind: "analysis", content: "Analysis." } },
+      { trigger: "review their", response: { kind: "message", content: "Noted." } },
+      { trigger: "approve only", response: { kind: "timeout", content: "B did not respond in time" } },
+    ]);
+    const orch = new Orchestrator({ task: "Build X", cwd: "/tmp" }, a, b);
+    const result = await orch.run();
+    expect(result.outcome).toBe("timeout");
+    const rejected = result.events.find((e) => e.type === "plan.rejected");
+    expect(rejected?.data).toEqual({ agentId: "b", noResponse: true });
+  });
+
   it("terminates agents after completion", async () => {
     const terminated: string[] = [];
     const a = new FakeOrchestratorAdapter(agentId("a"), "A");

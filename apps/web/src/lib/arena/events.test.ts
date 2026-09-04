@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { FakeOrchestratorAdapter, Orchestrator, agentId } from "@arena/core";
 import type { OrchestratorEvent } from "@arena/core";
 import {
+  noConsensusMessage,
   translateArenaEvent,
   type ArenaEventAction,
   type ArenaEventNames,
@@ -141,5 +144,65 @@ describe("translateArenaEvent — every orchestrator event reaches a destination
   it("an unknown event kind surfaces as unrecognized (null) — not silently dropped", () => {
     expect(translateArenaEvent(event("future.capability", {}), NAMES)).toBeNull();
     expect(translateArenaEvent(event(""), NAMES)).toBeNull();
+  });
+});
+
+describe("noConsensusMessage — the terminal judge sentence names the real end", () => {
+  it.each<[string, OrchestratorEvent[], string]>([
+    [
+      "a silent plan rejection names the agent",
+      [
+        event("analysis.complete", { agentA: "a", agentB: "b" }),
+        event("plan.rejected", { agentId: "B", noResponse: true }),
+      ],
+      "The arena session ended without consensus — GPT did not respond in time.",
+    ],
+    [
+      "a rejection with no silent side is not read as silence",
+      [event("plan.rejected")],
+      "The arena session ended without consensus — the proposed plan was rejected.",
+    ],
+    [
+      "a deadlock beats any rejection signal",
+      [event("plan.rejected", { agentId: "B", noResponse: true }), event("dispute.opened")],
+      "The arena session ended in deadlock — repeated objections without resolution.",
+    ],
+    [
+      "only progress events keep the round/time budget sentence",
+      [event("analysis.started")],
+      "The arena session ended without consensus — the agents could not agree within the round/time budget.",
+    ],
+  ])("%s", (_name, events, expected) => {
+    expect(noConsensusMessage(events, NAMES.resolveName)).toBe(expected);
+  });
+});
+
+describe("core-to-web lifecycle — a real silent plan vote reaches receipt and sentence", () => {
+  it("names the silent agent end to end through the real orchestrator event stream", async () => {
+    const a = new FakeOrchestratorAdapter(agentId("A"), "A");
+    const b = new FakeOrchestratorAdapter(agentId("B"), "B", [
+      { trigger: "independently", response: { kind: "analysis", content: "Analysis." } },
+      { trigger: "review their", response: { kind: "message", content: "Noted." } },
+      { trigger: "approve only", response: { kind: "timeout", content: "B did not respond in time" } },
+    ]);
+    const orch = new Orchestrator({ task: "Build X", cwd: tmpdir() }, a, b);
+    const result = await orch.run();
+    expect(result.outcome).toBe("timeout");
+
+    // The real emitted stream, translated exactly as runArena translates it.
+    const receipts = [];
+    for (const ev of result.events) {
+      for (const action of translateArenaEvent(ev, NAMES) ?? []) {
+        if (action.kind === "receipt") receipts.push(action.receipt);
+      }
+    }
+    expect(receipts).toContainEqual({
+      kind: "plan-rejected",
+      agentName: "GPT",
+      noResponse: true,
+    });
+    expect(noConsensusMessage(result.events, NAMES.resolveName)).toBe(
+      "The arena session ended without consensus — GPT did not respond in time.",
+    );
   });
 });

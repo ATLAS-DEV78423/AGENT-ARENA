@@ -297,7 +297,11 @@ export class Orchestrator {
 
       if (rAp.kind !== "plan_approved" || rBp.kind !== "plan_approved") {
         this.trans("plan_rejected");
-        this.emit("plan.rejected");
+        // A silent side (timeout) is not a substantive disagreement — name it
+        // so the terminal message does not read as a plan vote.
+        const silent =
+          rAp.kind === "timeout" ? this.adapterA.id : rBp.kind === "timeout" ? this.adapterB.id : undefined;
+        this.emit("plan.rejected", silent ? { agentId: silent, noResponse: true } : undefined);
         return this.result("timeout");
       }
       this.trans("plan_approved");

@@ -26,7 +26,7 @@ import {
 import type { OrchestratorEvent } from "@arena/core";
 import { OpenCodeAdapter } from "@arena/agents";
 import type { Receipt } from "@/lib/types";
-import { translateArenaEvent } from "./events";
+import { noConsensusMessage, translateArenaEvent } from "./events";
 import type { ArenaChatMessage, ArenaPhase, ArenaEventNames } from "./events";
 
 export type { ArenaChatMessage, ArenaPhase } from "./events";
@@ -146,7 +146,9 @@ export async function runArena(options: ArenaRunOptions): Promise<ArenaRunResult
       agentA: { id: adapters[0]!.id as string, name: adapters[0]!.name },
       agentB: { id: adapters[1]!.id as string, name: adapters[1]!.name },
     };
+    const seenEvents: OrchestratorEvent[] = [];
     const handleEvent = (event: OrchestratorEvent) => {
+      seenEvents.push(event);
       const actions = translateArenaEvent(event, eventNames);
       if (!actions) {
         // A future orchestrator event — surface it instead of dropping it.
@@ -185,8 +187,7 @@ export async function runArena(options: ArenaRunOptions): Promise<ArenaRunResult
       chat({
         role: "judge",
         agentName: "Judge",
-        content:
-          "The arena session ended without consensus — the agents could not agree within the round/time budget.",
+        content: noConsensusMessage(seenEvents, eventNames.resolveName),
       });
     }
 

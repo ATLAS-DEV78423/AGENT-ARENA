@@ -42,6 +42,16 @@ describe("buildVerdictCard", () => {
     expect(deadlocked.citations).toContain("Agents deadlocked on repeated objections");
   });
 
+  it("names the silent agent when the plan rejection was a no-response", () => {
+    const card = buildVerdictCard(
+      [{ kind: "plan-rejected", agentName: "nemotron", noResponse: true }],
+      "ended without consensus",
+    );
+    expect(card.citations).toContain(
+      "Plan was rejected — nemotron did not respond in time",
+    );
+  });
+
   it("degrades to the plain headline when there are no receipts", () => {
     const card = buildVerdictCard(undefined, "The agents reached consensus after 1 round.");
     expect(card.headline).toBe("The agents reached consensus after 1 round.");

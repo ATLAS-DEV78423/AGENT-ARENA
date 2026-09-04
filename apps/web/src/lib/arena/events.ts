@@ -116,7 +116,18 @@ const HANDLERS: Record<ArenaEventKind, (event: OrchestratorEvent, names: ArenaEv
     return actions;
   },
   "plan.approved": () => [receipt({ kind: "plan-approved" })],
-  "plan.rejected": () => [receipt({ kind: "plan-rejected" })],
+  "plan.rejected": (event, names) => {
+    const data = event.data as { agentId?: unknown; noResponse?: unknown } | undefined;
+    const silent = data?.noResponse === true && typeof data.agentId === "string";
+    return [
+      receipt({
+        kind: "plan-rejected",
+        ...(silent
+          ? { noResponse: true, agentName: names.resolveName(data.agentId as string) }
+          : {}),
+      }),
+    ];
+  },
   "dispute.opened": () => [receipt({ kind: "deadlock" })],
   "round.started": (event, names) => [
     receipt({
@@ -158,4 +169,29 @@ export function translateArenaEvent(
   names: ArenaEventNames,
 ): ArenaEventAction[] | null {
   return HANDLERS[event.type as ArenaEventKind]?.(event, names) ?? null;
+}
+
+/**
+ * The terminal judge sentence for a no-consensus run. A run ends on rejection
+ * (the orchestrator returns), so at most one plan.rejected can appear.
+ */
+export function noConsensusMessage(
+  events: ReadonlyArray<{ type: string; data?: Record<string, unknown> }>,
+  resolveName: (id: string) => string | undefined,
+): string {
+  if (events.some((e) => e.type === "dispute.opened")) {
+    return "The arena session ended in deadlock — repeated objections without resolution.";
+  }
+  const vote = events.find((e) => e.type === "plan.rejected");
+  if (!vote) {
+    return "The arena session ended without consensus — the agents could not agree within the round/time budget.";
+  }
+  const payload = vote.data;
+  const silent =
+    payload?.noResponse === true && typeof payload.agentId === "string"
+      ? resolveName(payload.agentId)
+      : undefined;
+  return silent
+    ? `The arena session ended without consensus — ${silent} did not respond in time.`
+    : "The arena session ended without consensus — the proposed plan was rejected.";
 }

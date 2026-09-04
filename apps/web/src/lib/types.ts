@@ -37,7 +37,7 @@ export interface SessionPhase {
  */
 export type Receipt =
   | { kind: "plan-approved" }
-  | { kind: "plan-rejected" }
+  | { kind: "plan-rejected"; agentName?: string; noResponse?: boolean }
   | { kind: "deadlock" }
   | { kind: "round"; number: number; builder: string; reviewer: string }
   | { kind: "finding"; severity: string; claim: string; agentName?: string }
