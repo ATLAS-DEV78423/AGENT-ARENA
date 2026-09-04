@@ -8,7 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -18,19 +18,20 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # Web app (apps/web) installs via npm and is excluded from the pnpm
-      # workspace build until its deps are fully pnpm-managed.
+      # Cross-package imports resolve through each package's dist (package.json
+      # "types"/"exports"), so build first — pnpm -r runs in dependency order
+      # and the web build gates the shipped app too.
+      - name: Build
+        run: pnpm -r build
+
       - name: Typecheck
         run: pnpm -r typecheck
-
-      - name: Build packages + CLI
-        run: pnpm --filter './packages/*' --filter './apps/cli' build
 
       - name: Test
         run: pnpm test
