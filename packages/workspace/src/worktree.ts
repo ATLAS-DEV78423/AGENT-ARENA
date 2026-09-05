@@ -1,11 +1,22 @@
-import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export interface Worktree {
   path: string;
   branch: string;
+}
+
+// Git records the real (long, correctly-cased) path; on Windows os.tmpdir()
+// can be the 8.3 short form (RUNNER~1) and on macOS /var symlinks to
+// /private/var — canonicalize so worktree paths match what git reports.
+function canonicalTmp(): string {
+  try {
+    return realpathSync(tmpdir());
+  } catch {
+    return tmpdir();
+  }
 }
 
 export class WorktreeManager {
@@ -17,9 +28,9 @@ export class WorktreeManager {
 
   create(agentId: string): Worktree {
     const branch = `arena/${agentId}-${Date.now()}`;
-    const worktreePath = mkdtempSync(join(tmpdir(), `arena-wt-${agentId}-`));
+    const worktreePath = mkdtempSync(join(canonicalTmp(), `arena-wt-${agentId}-`));
 
-    execSync(`git worktree add "${worktreePath}" -b ${branch}`, {
+    execFileSync("git", ["worktree", "add", worktreePath, "-b", branch], {
       cwd: this.repoRoot,
       stdio: "ignore",
       timeout: 10_000,
@@ -30,7 +41,7 @@ export class WorktreeManager {
 
   cleanup(wt: Worktree): void {
     try {
-      execSync(`git worktree remove "${wt.path}" --force`, {
+      execFileSync("git", ["worktree", "remove", wt.path, "--force"], {
         cwd: this.repoRoot,
         stdio: "ignore",
         timeout: 10_000,
