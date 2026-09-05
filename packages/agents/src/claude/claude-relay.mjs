@@ -30,7 +30,18 @@ function exitWhenIdle() {
   if (pending === 0 && stdinClosed) setTimeout(() => process.exit(0), 20);
 }
 
+// Serial by design: responses are paired to prompts by stdout order, so
+// overlapping calls would interleave the transcript and pair answers to the
+// wrong prompt. Queue and run one call at a time.
+const queue = [];
+let busy = false;
+
 function runModel(prompt) {
+  if (busy) {
+    queue.push(prompt);
+    return;
+  }
+  busy = true;
   pending++;
   const timeout = calls === 0 ? FIRST_CALL_TIMEOUT : TIMEOUT;
   calls++;
@@ -44,7 +55,10 @@ function runModel(prompt) {
       process.stdout.write(output.trim() + "\n");
       process.stdout.write(DELIM + "\n");
       pending--;
-      exitWhenIdle();
+      busy = false;
+      const next = queue.shift();
+      if (next) runModel(next);
+      else exitWhenIdle();
     },
   );
 }
