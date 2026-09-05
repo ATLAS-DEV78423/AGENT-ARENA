@@ -13,3 +13,9 @@ ECC/
 .arena-worktree-test/
 .superpowers/
 .playwright-mcp/
+
+# local artifacts and stray files — keep out of the repo
+*.log
+graphify-out/
+redesign-empty.png
+AGENTS(1).md
