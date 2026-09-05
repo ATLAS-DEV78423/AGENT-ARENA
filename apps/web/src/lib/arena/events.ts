@@ -46,6 +46,7 @@ type ArenaEventKind =
   | "verification.completed"
   | "finding.created"
   | "review.started"
+  | "budget.exhausted"
   | "consensus.reached"
   | "agent.thinking"
   | "error";
@@ -157,6 +158,9 @@ const HANDLERS: Record<ArenaEventKind, (event: OrchestratorEvent, names: ArenaEv
   "discussion.complete": () => [],
   "verification.completed": () => [],
   "review.started": () => [],
+  // The orchestrator's honest "rounds ran out" marker; the judge sentence
+  // already names the real cause (see noConsensusMessage), so this is inert.
+  "budget.exhausted": () => [],
 };
 
 /**
@@ -176,11 +180,25 @@ export function translateArenaEvent(
  * (the orchestrator returns), so at most one plan.rejected can appear.
  */
 export function noConsensusMessage(
-  events: ReadonlyArray<{ type: string; data?: Record<string, unknown> }>,
+  events: ReadonlyArray<{
+    type: string;
+    agentId?: unknown;
+    data?: Record<string, unknown>;
+  }>,
   resolveName: (id: string) => string | undefined,
 ): string {
   if (events.some((e) => e.type === "dispute.opened")) {
     return "The arena session ended in deadlock — repeated objections without resolution.";
+  }
+  // Rounds ran out with the reviewer's finding still open — that, not vague
+  // budget pressure, is why there is no consensus. Name it.
+  const finding = [...events].reverse().find((e) => e.type === "finding.created");
+  if (finding) {
+    const severity = String(finding.data?.severity ?? "unspecified");
+    const claim = String(finding.data?.claim ?? "").slice(0, 100);
+    const who =
+      typeof finding.agentId === "string" ? resolveName(finding.agentId) : undefined;
+    return `The arena session ended without consensus — ${who ?? "the reviewer"}'s ${severity} finding was never resolved${claim ? `: "${claim}".` : "."}`;
   }
   const vote = events.find((e) => e.type === "plan.rejected");
   if (!vote) {
