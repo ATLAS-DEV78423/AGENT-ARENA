@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { WorktreeManager } from "./worktree.js";
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const TEST_DIR = join(process.cwd(), ".arena-worktree-test");
@@ -23,9 +23,13 @@ describe("WorktreeManager", () => {
     const wt = mgr.create("agent-a");
     expect(existsSync(wt.path)).toBe(true);
     expect(wt.branch).toContain("arena/agent-a");
-    // Verify worktree is registered by git (git prints forward slashes on Windows)
+    // Verify the worktree is registered by git. String-matching raw paths is
+    // hopeless across platforms: git prints the canonical path (long form,
+    // forward slashes) while wt.path may be an 8.3 short form (RUNNER~1) with
+    // backslashes. Compare canonical filesystem paths on both sides instead.
     const worktrees = execSync("git worktree list", { cwd: repo, encoding: "utf-8" });
-    expect(worktrees).toContain(wt.path.split("\\").join("/"));
+    const canonical = (p: string) => realpathSync(p).split("\\").join("/");
+    expect(worktrees).toContain(canonical(wt.path));
     mgr.cleanup(wt);
   });
 
