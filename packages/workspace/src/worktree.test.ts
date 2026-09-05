@@ -1,8 +1,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { WorktreeManager } from "./worktree.js";
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { basename, join } from "node:path";
 
 const TEST_DIR = join(process.cwd(), ".arena-worktree-test");
 
@@ -23,13 +23,13 @@ describe("WorktreeManager", () => {
     const wt = mgr.create("agent-a");
     expect(existsSync(wt.path)).toBe(true);
     expect(wt.branch).toContain("arena/agent-a");
-    // Verify the worktree is registered by git. String-matching raw paths is
-    // hopeless across platforms: git prints the canonical path (long form,
-    // forward slashes) while wt.path may be an 8.3 short form (RUNNER~1) with
-    // backslashes. Compare canonical filesystem paths on both sides instead.
+    // Verify the worktree is registered by git. Full-path matching is hopeless
+    // across platforms — git prints the long form (runneradmin) while wt.path
+    // may carry an 8.3 short name (RUNNER~1); even realpathSync doesn't expand
+    // NTFS short-name aliases. The mkdtemp leaf directory name is unique and
+    // spelling-invariant, and git prints it verbatim on every platform.
     const worktrees = execSync("git worktree list", { cwd: repo, encoding: "utf-8" });
-    const canonical = (p: string) => realpathSync(p).split("\\").join("/");
-    expect(worktrees).toContain(canonical(wt.path));
+    expect(worktrees).toContain(basename(wt.path));
     mgr.cleanup(wt);
   });
 
