@@ -13,7 +13,10 @@ export class OpenCodeAdapter extends PersistentRelayAdapter {
   readonly name: string;
   readonly model: string;
 
-  constructor(model: string) {
+  constructor(
+    model: string,
+    timeouts?: { timeoutMs?: number; firstCallTimeoutMs?: number },
+  ) {
     const slug = model.split("/").pop() ?? model;
     super({
       cliCommand: OPENCODE_COMMAND,
@@ -22,6 +25,7 @@ export class OpenCodeAdapter extends PersistentRelayAdapter {
       relayEnv: { ARENA_MODEL: model },
       notDetectedError: "opencode not detected. Install opencode: npm i -g opencode",
       label: "OpenCode",
+      ...timeouts,
     });
     this.model = model;
     this.id = agentId(slug);
@@ -38,7 +42,8 @@ export class OpenCodeAdapter extends PersistentRelayAdapter {
         OPENCODE_COMMAND,
         ["run", "-m", this.model, "--pure", "--dir", process.cwd()],
         {
-          timeout: 120_000,
+          // One-shot mode spawns a fresh CLI per call — every call is a cold start.
+          timeout: this.firstCallTimeoutMs,
           cwd: process.cwd(),
           maxBuffer: 1024 * 1024,
         },

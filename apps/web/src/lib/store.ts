@@ -2,10 +2,11 @@ import { create } from "zustand";
 import { AGENTS } from "./mock-data";
 import { terminalStatus } from "./arena/terminal";
 import type { TerminalSignal } from "./arena/terminal";
-import type { Agent, Message, Receipt, Session, SessionPhase, SessionStatus } from "./types";
+import type { Agent, Message, Receipt, Session } from "./types";
 
 const STORAGE_KEY = "agent-arena:sessions:v1";
 const LEASE_KEY = "agent-arena:leases:v1";
+const OWNER_KEY = "agent-arena:owner:v1";
 /** A running session with a lease fresher than this is alive in another tab. */
 const LEASE_TTL_MS = 6000;
 const LEASE_BEAT_MS = 2000;
@@ -13,6 +14,14 @@ const POLL_MS = 2000;
 
 let lastStoredRaw: string | null = null;
 let leaseTimer: ReturnType<typeof setInterval> | null = null;
+/** Sessions this tab is mid-reconnect for — one attempt at a time. */
+const adopting = new Set<string>();
+/** Runs this server process no longer holds — reconnect would 404, stop asking. */
+const gone = new Set<string>();
+/** Abort handles for streams this page consumes, so a dismiss can stop them. */
+const readers = new Map<string, AbortController>();
+/** True once this page starts unloading — aborted requests then are navigation, not failures. */
+let pageLeaving = false;
 
 function safeRead(key: string): string | null {
   try {
@@ -145,6 +154,252 @@ function refreshRemoteRunning() {
   );
 }
 
+// --- Ownership of a stream this tab consumes ---------------------------------
+// begin/end bracket streaming from this page: the localStorage lease (so other
+// tabs see the run as live, not interrupted), the heartbeat that keeps it
+// fresh, the sessionStorage marker (so a reload knows the run was ours and
+// reconnects to it immediately), and activeRunId (the banner/phase-strip
+// guard). All idempotent — safe to call from both startArena and reconnect.
+
+function readOwner(): string | null {
+  try {
+    return window.sessionStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearOwner(sessionId: string) {
+  try {
+    if (window.sessionStorage.getItem(OWNER_KEY) === sessionId) {
+      window.sessionStorage.removeItem(OWNER_KEY);
+    }
+  } catch {
+    // sessionStorage unavailable — nothing to clear
+  }
+}
+
+function beginOwnership(sessionId: string) {
+  writeLease(sessionId);
+  try {
+    window.sessionStorage.setItem(OWNER_KEY, sessionId);
+  } catch {
+    // sessionStorage unavailable — the lease still guards other tabs
+  }
+  if (leaseTimer) clearInterval(leaseTimer);
+  leaseTimer = setInterval(() => writeLease(sessionId), LEASE_BEAT_MS);
+}
+
+function endOwnership(sessionId: string) {
+  if (leaseTimer) clearInterval(leaseTimer);
+  leaseTimer = null;
+  clearLease(sessionId);
+  clearOwner(sessionId);
+  refreshRemoteRunning();
+  useStore.setState((state) => ({
+    activeRunId: state.activeRunId === sessionId ? null : state.activeRunId,
+  }));
+}
+
+// --- SSE consumption ----------------------------------------------------------
+
+/**
+ * Applies one SSE frame to its session, advancing the per-session cursor in
+ * the same state write so the two can never drift apart on disk: `cursor` is
+ * the count of frames this client has consumed from the run's stream, and a
+ * reload reconnects at that exact index — no frame is delivered twice or lost.
+ */
+function applyFrame(sessionId: string, event: string, data: Record<string, unknown>, cursor: number) {
+  useStore.setState((state) => ({
+    sessions: state.sessions.map((s) => {
+      if (s.id !== sessionId) return s;
+      let patch: Partial<Session> = { sseCursor: cursor, updatedAt: new Date() };
+      if (event === "session.mode" && (data.mode === "live" || data.mode === "demo")) {
+        patch.mode = data.mode;
+      } else if (event === "phase") {
+        const key = String(data.phase ?? "");
+        if (key) {
+          patch.phase = {
+            key,
+            agentId: data.agentId as string | undefined,
+            agentName:
+              typeof data.agentName === "string" && data.agentName
+                ? data.agentName
+                : undefined,
+            since: Date.now(),
+          };
+        }
+      } else if (event === "receipt") {
+        const kind = String(data.kind ?? "");
+        if (kind) patch.receipts = [...(s.receipts ?? []), data as unknown as Receipt];
+      } else if (event === "message") {
+        const msg: Message = {
+          id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: data.role === "judge" ? "judge" : "arena",
+          agentId: data.agentId as string | undefined,
+          agentName:
+            typeof data.agentName === "string" && data.agentName
+              ? data.agentName
+              : data.role === "judge"
+                ? "Judge"
+                : (data.agentId as string) || String(data.role),
+          content: String(data.content ?? ""),
+          timestamp: new Date(),
+        };
+        patch.messages = [...s.messages, msg];
+      } else if (event === "error") {
+        patch.messages = [
+          ...s.messages,
+          {
+            id: `m-${Date.now()}-error`,
+            role: "judge",
+            agentId: "judge",
+            agentName: "Judge",
+            content: `Arena session failed: ${String(data.message ?? "the run errored on the server")}`,
+            timestamp: new Date(),
+          },
+        ];
+      }
+      return { ...s, ...patch };
+    }),
+  }));
+}
+
+/**
+ * Reads an arena SSE stream to completion and applies it to the session: every
+ * frame advances the session cursor and lands its mode/phase/receipt/message,
+ * and the terminal status is decided by what the stream actually reported
+ * (completed-with-error is `error`, a clean end stays `completed`). Callers
+ * bracket this with begin/endOwnership.
+ */
+async function consumeArenaStream(sessionId: string, response: Response, startCursor: number) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const controller = new AbortController();
+  readers.set(sessionId, controller);
+  try {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let cursor = startCursor;
+    let terminal: TerminalSignal = { kind: "none" };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let event: string;
+        let data: Record<string, unknown>;
+        try {
+          ({ event, data } = JSON.parse(line.slice(6)));
+        } catch {
+          continue; // skip malformed lines
+        }
+
+        cursor += 1;
+        applyFrame(sessionId, event, data, cursor);
+        if (event === "session.completed") {
+          terminal = { kind: "completed", outcome: String(data.outcome ?? "") };
+        } else if (event === "error") {
+          terminal = { kind: "error" };
+        }
+      }
+    }
+
+    // A terminal status ends the run — drop the live phase so no stale
+    // progress strip survives into the transcript.
+    useStore.setState((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, status: terminalStatus(terminal), phase: undefined, sseCursor: cursor }
+          : s,
+      ),
+    }));
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") return; // dismissed — status already set
+    throw error;
+  } finally {
+    readers.delete(sessionId);
+  }
+}
+
+// --- Reconnect ----------------------------------------------------------------
+
+/**
+ * Reconnects to a still-running arena this page did not start: a reload killed
+ * the POST stream, but the run lives on server-side (GET stream replays the
+ * frames past our persisted cursor, then streams live). Adopts ownership only
+ * if the session is still genuinely running and nothing else is streaming —
+ * otherwise the existing interrupted/Retry flow stays in charge.
+ *
+ * `force` is set when the sessionStorage owner marker says this very tab ran
+ * the arena before a reload: the lease it left behind is our own (still fresh
+ * for a few seconds), so it must not count as another live owner.
+ */
+async function reconnectToRun(sessionId: string, force = false) {
+  if (adopting.has(sessionId) || gone.has(sessionId)) return;
+  const snapshot = useStore.getState();
+  const session = snapshot.sessions.find((s) => s.id === sessionId);
+  if (!session || session.status !== "running") return;
+  if (snapshot.activeRunId) return;
+  if (!force && snapshot.remoteRunning.includes(sessionId)) return;
+
+  adopting.add(sessionId);
+  let owned = false;
+  try {
+    const cursor = session.sseCursor ?? 0;
+    // The lease beat we started with: if it advances while the request is in
+    // flight, another page adopted the run first — step aside for it.
+    const leaseBefore = readLeases()[sessionId] ?? 0;
+    const response = await fetch(
+      `/api/arena/${encodeURIComponent(sessionId)}/stream?after=${cursor}`,
+    );
+    if (!response.ok) {
+      // The server no longer holds this run (it finished beyond the reconnect
+      // window, or the server restarted) — the stream is genuinely gone.
+      gone.add(sessionId);
+      return;
+    }
+    // Re-check before adopting: the user may have retried or dismissed while
+    // the request was in flight, or another tab may have adopted it first.
+    const now = useStore.getState();
+    const current = now.sessions.find((s) => s.id === sessionId);
+    const leaseNow = readLeases()[sessionId] ?? 0;
+    if (!current || current.status !== "running" || now.activeRunId || leaseNow > leaseBefore) {
+      return;
+    }
+    beginOwnership(sessionId);
+    owned = true;
+    useStore.setState({ activeRunId: sessionId, activeSessionId: sessionId });
+    try {
+      await consumeArenaStream(sessionId, response, cursor);
+    } catch (error) {
+      // The reconnect stream died too — leave the session stranded (running,
+      // no lease) so the interrupted banner with Retry appears, as before.
+      console.error("Arena reconnect failed:", error);
+    }
+  } finally {
+    adopting.delete(sessionId);
+    // Only end what we began — a skipped adoption must not clear another
+    // tab's lease for the same session.
+    if (owned) endOwnership(sessionId);
+  }
+}
+
+/** Reconnect trigger: a running session no one holds a fresh lease for. */
+function maybeReconnect() {
+  const { sessions, remoteRunning, activeRunId } = useStore.getState();
+  if (activeRunId) return;
+  for (const s of sessions) {
+    if (s.status === "running" && !remoteRunning.includes(s.id)) void reconnectToRun(s.id);
+  }
+}
+
 interface ArenaStore {
   agents: Agent[];
   /** True when the server reported live agents at the last refresh. */
@@ -238,14 +493,17 @@ export const useStore = create<ArenaStore>((set) => ({
 
   setActiveSession: (id) => set({ activeSessionId: id, arenaOpen: false }),
 
-  markInterrupted: (id) =>
+  markInterrupted: (id) => {
+    readers.get(id)?.abort();
+    clearOwner(id);
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id && s.id !== state.activeRunId
           ? { ...s, status: "interrupted", phase: undefined }
           : s,
       ),
-    })),
+    }));
+  },
 
   clearHistory: () => {
     if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
@@ -288,6 +546,7 @@ export const useStore = create<ArenaStore>((set) => ({
       createdAt: now,
       updatedAt: now,
       status: "running",
+      sseCursor: 0,
       phase: { key: "starting", since: now.getTime() },
     };
 
@@ -298,47 +557,15 @@ export const useStore = create<ArenaStore>((set) => ({
       arenaOpen: false,
     }));
 
-    // Heartbeat so other tabs see this run as live (not "interrupted").
-    writeLease(sessionId);
-    if (leaseTimer) clearInterval(leaseTimer);
-    leaseTimer = setInterval(() => writeLease(sessionId), LEASE_BEAT_MS);
-
-    const appendMessage = (msg: Message) =>
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === sessionId ? { ...s, messages: [...s.messages, msg], updatedAt: new Date() } : s,
-        ),
-      }));
-    const setSessionMode = (mode: "live" | "demo") =>
-      set((state) => ({
-        sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, mode } : s)),
-      }));
-    const setSessionStatus = (status: SessionStatus) =>
-      set((state) => ({
-        // A terminal status ends the run — drop the live phase so no stale
-        // progress strip survives into the transcript.
-        sessions: state.sessions.map((s) =>
-          s.id === sessionId ? { ...s, status, phase: undefined } : s,
-        ),
-      }));
-    const setPhase = (phase: SessionPhase) =>
-      set((state) => ({
-        sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, phase } : s)),
-      }));
-    const appendReceipt = (receipt: Receipt) =>
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === sessionId
-            ? { ...s, receipts: [...(s.receipts ?? []), receipt] }
-            : s,
-        ),
-      }));
+    // Heartbeat so other tabs see this run as live (not "interrupted"), and a
+    // marker so a reload knows this run was ours and reconnects to it.
+    beginOwnership(sessionId);
 
     try {
       const response = await fetch("/api/arena", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agents: agentIds, prompt }),
+        body: JSON.stringify({ agents: agentIds, prompt, sessionId }),
       });
 
       if (!response.ok) {
@@ -351,110 +578,81 @@ export const useStore = create<ArenaStore>((set) => ({
         } catch {
           // Non-JSON error body — fall back to the status code.
         }
-        throw new Error(detail || `Request failed (${response.status})`);
+        const message = detail || `Request failed (${response.status})`;
+        useStore.setState((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, status: "error", phase: undefined } : s,
+          ),
+        }));
+        useStore.setState((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId
+              ? {
+                  ...s,
+                  messages: [
+                    ...s.messages,
+                    {
+                      id: `m-${Date.now()}-error`,
+                      role: "judge",
+                      agentId: "judge",
+                      agentName: "Judge",
+                      content: `Arena request failed — ${message}`,
+                      timestamp: new Date(),
+                    },
+                  ],
+                }
+              : s,
+          ),
+        }));
+        return;
       }
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      // The server's last word on the run — captured here so the terminal
-      // status below is decided by what it actually reported, not the bare
-      // fact that the stream closed.
-      let terminal: TerminalSignal = { kind: "none" };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          let event: string;
-          let data: Record<string, unknown>;
-          try {
-            ({ event, data } = JSON.parse(line.slice(6)));
-          } catch {
-            continue; // skip malformed lines
-          }
-
-          if (event === "session.mode" && (data.mode === "live" || data.mode === "demo")) {
-            setSessionMode(data.mode);
-          } else if (event === "phase") {
-            const key = String(data.phase ?? "");
-            if (key) {
-              setPhase({
-                key,
-                agentId: data.agentId as string | undefined,
-                agentName:
-                  typeof data.agentName === "string" && data.agentName
-                    ? data.agentName
-                    : undefined,
-                since: Date.now(),
-              });
-            }
-          } else if (event === "receipt") {
-            const kind = String(data.kind ?? "");
-            if (kind) appendReceipt(data as unknown as Receipt);
-          } else if (event === "message") {
-            appendMessage({
-              id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              role: data.role === "judge" ? "judge" : "arena",
-              agentId: data.agentId as string | undefined,
-              agentName:
-                typeof data.agentName === "string" && data.agentName
-                  ? data.agentName
-                  : data.role === "judge"
-                    ? "Judge"
-                    : (data.agentId as string) || String(data.role),
-              content: String(data.content ?? ""),
-              timestamp: new Date(),
-            });
-          } else if (event === "session.completed") {
-            terminal = { kind: "completed", outcome: String(data.outcome ?? "") };
-          } else if (event === "error") {
-            terminal = { kind: "error" };
-            appendMessage({
-              id: `m-${Date.now()}-error`,
-              role: "judge",
-              agentId: "judge",
-              agentName: "Judge",
-              content: `Arena session failed: ${String(data.message ?? "the run errored on the server")}`,
-              timestamp: new Date(),
-            });
-          }
-        }
-      }
-      setSessionStatus(terminalStatus(terminal));
+      await consumeArenaStream(sessionId, response, 0);
     } catch (error) {
+      // Navigating away (reload/close) aborts the in-flight fetch — that is
+      // not a server failure: the run continues server-side and the reloaded
+      // page reconnects to it. Label nothing and leave the lease/marker so the
+      // next page can. A genuine failure keeps the honest bubble below.
+      if (pageLeaving || (error instanceof DOMException && error.name === "AbortError")) {
+        return;
+      }
       // Honest failure: surface it instead of fabricating agent answers. A fetch
       // rejection (TypeError) means the server was unreachable; any other error
       // carries the server's own answer, worth repeating verbatim.
       console.error("Arena request failed:", error);
       const serverSaid =
         error instanceof Error && !(error instanceof TypeError) && error.message ? error.message : "";
-      setSessionStatus("error");
-      appendMessage({
-        id: `m-${Date.now()}-error`,
-        role: "judge",
-        agentId: "judge",
-        agentName: "Judge",
-        content: serverSaid
-          ? `Arena request failed — ${serverSaid}`
-          : "Arena request failed — the session could not run. Is the server reachable?",
-        timestamp: new Date(),
-      });
-    } finally {
-      if (leaseTimer) clearInterval(leaseTimer);
-      leaseTimer = null;
-      clearLease(sessionId);
-      refreshRemoteRunning();
-      set((state) => ({
-        activeRunId: state.activeRunId === sessionId ? null : state.activeRunId,
+      useStore.setState((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, status: "error", phase: undefined } : s,
+        ),
       }));
+      useStore.setState((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                messages: [
+                  ...s.messages,
+                  {
+                    id: `m-${Date.now()}-error`,
+                    role: "judge",
+                    agentId: "judge",
+                    agentName: "Judge",
+                    content: serverSaid
+                      ? `Arena request failed — ${serverSaid}`
+                      : "Arena request failed — the session could not run. Is the server reachable?",
+                    timestamp: new Date(),
+                  },
+                ],
+              }
+            : s,
+        ),
+      }));
+    } finally {
+      // While the page is dying the next page will adopt this run — keep its
+      // lease and owner marker so that adoption can find it.
+      if (!pageLeaving) endOwnership(sessionId);
     }
   },
 
@@ -468,12 +666,26 @@ export const useStore = create<ArenaStore>((set) => ({
 // sync with other tabs: storage events adopt the other tab's journal (with the
 // newer-wins merge, so our own in-flight stream is never replaced), lease
 // events update who is running elsewhere, and a poll detects a dead owner
-// (leases go stale without events). Hydration runs after mount (setTimeout) so
-// the first client render matches the server render without a React warning.
+// (leases go stale without events) and reconnects to runs that outlived their
+// owner. Hydration runs after mount (setTimeout) so the first client render
+// matches the server render without a React warning.
 if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    pageLeaving = true;
+  });
   lastStoredRaw = safeRead(STORAGE_KEY);
   const stored = loadSessions();
-  if (stored.length) setTimeout(() => useStore.setState({ sessions: stored }), 0);
+  if (stored.length) {
+    setTimeout(() => {
+      useStore.setState({ sessions: stored });
+      // This tab streamed a run before the reload — reconnect to it now, even
+      // while its lease is still fresh (it is ours, not another tab's).
+      const owned = readOwner();
+      if (owned && stored.some((s) => s.id === owned && s.status === "running")) {
+        void reconnectToRun(owned, true);
+      }
+    }, 0);
+  }
   // Know right away whether another tab is streaming (lease TTL is 6s, so a
   // live run always has a fresh lease at load time) — no wrong banner flash.
   refreshRemoteRunning();
@@ -489,6 +701,9 @@ if (typeof window !== "undefined") {
     }
   });
 
-  setInterval(refreshRemoteRunning, POLL_MS);
+  setInterval(() => {
+    refreshRemoteRunning();
+    maybeReconnect();
+  }, POLL_MS);
   useStore.subscribe((state) => writeSessions(state.sessions));
 }

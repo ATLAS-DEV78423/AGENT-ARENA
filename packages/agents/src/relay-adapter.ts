@@ -9,6 +9,14 @@ import { AgentAdapter, DetectionResult, AgentSessionHandle } from "./adapter.js"
 // call. Must match the default in the relay scripts.
 export const PROMPT_DELIM = "__ARENA_PROMPT_END__";
 
+/** Steady per-call budget for a live agent (every call after the first). */
+export const DEFAULT_CALL_TIMEOUT_MS = 120_000;
+/**
+ * Budget for the first call on a relay process — a cold start (process spawn +
+ * provider handshake + first token) routinely exceeds the steady budget.
+ */
+export const DEFAULT_FIRST_CALL_TIMEOUT_MS = 300_000;
+
 export interface RelayAdapterConfig {
   /** CLI binary that answers `--version` (e.g. "opencode", "claude"). */
   cliCommand: string;
@@ -22,6 +30,10 @@ export interface RelayAdapterConfig {
   notDetectedError: string;
   /** Display label used in crash/timeout messages ("OpenCode", "Claude"). */
   label: string;
+  /** Steady per-call budget in ms (default DEFAULT_CALL_TIMEOUT_MS). */
+  timeoutMs?: number;
+  /** First-call-on-a-relay budget in ms (default DEFAULT_FIRST_CALL_TIMEOUT_MS). */
+  firstCallTimeoutMs?: number;
   interactive?: boolean;
   supportsInterrupt?: boolean;
 }
@@ -38,8 +50,23 @@ export abstract class PersistentRelayAdapter implements AgentAdapter, Orchestrat
   protected detected = false;
   protected persistentSessions = new Map<string, PersistentSession>();
   protected oneShotSessions = new Map<string, { pid: number; alive: boolean }>();
+  /** Calls sent per relay session — the first on each process gets the cold-start budget. */
+  private callsPerSession = new Map<string, number>();
+  protected readonly timeoutMs: number;
+  protected readonly firstCallTimeoutMs: number;
 
-  constructor(private readonly relay: RelayAdapterConfig) {}
+  constructor(private readonly relay: RelayAdapterConfig) {
+    this.timeoutMs = relay.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
+    this.firstCallTimeoutMs =
+      relay.firstCallTimeoutMs ?? DEFAULT_FIRST_CALL_TIMEOUT_MS;
+  }
+
+  /** Budget for the given session's next call (first call on the relay = cold start). */
+  protected nextCallTimeoutMs(sessionId: string): number {
+    const calls = this.callsPerSession.get(sessionId) ?? 0;
+    this.callsPerSession.set(sessionId, calls + 1);
+    return calls === 0 ? this.firstCallTimeoutMs : this.timeoutMs;
+  }
 
   async detect(): Promise<DetectionResult> {
     return new Promise((resolve) => {
@@ -67,7 +94,8 @@ export abstract class PersistentRelayAdapter implements AgentAdapter, Orchestrat
         cwd: config.cwd,
         env: {
           [this.relay.cliEnvVar]: this.relay.cliCommand,
-          ARENA_TIMEOUT: "120000",
+          ARENA_TIMEOUT: String(this.timeoutMs),
+          ARENA_FIRST_CALL_TIMEOUT: String(this.firstCallTimeoutMs),
           ...this.relay.relayEnv,
           ...config.env,
         },
@@ -89,7 +117,10 @@ export abstract class PersistentRelayAdapter implements AgentAdapter, Orchestrat
         return { kind: "crash", content: `${this.relay.label} process exited` };
       }
       try {
-        const output = await session.sendAndWait(`${message}\n${PROMPT_DELIM}`, 120_000);
+        const output = await session.sendAndWait(
+          `${message}\n${PROMPT_DELIM}`,
+          this.nextCallTimeoutMs(handle.sessionId),
+        );
         return buildResponse(output, message);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);

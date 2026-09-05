@@ -12,7 +12,7 @@ export class ClaudeAdapter extends PersistentRelayAdapter {
   readonly id: AgentId = agentId("claude");
   readonly name = "Claude";
 
-  constructor() {
+  constructor(timeouts?: { timeoutMs?: number; firstCallTimeoutMs?: number }) {
     super({
       cliCommand: CLAUDE_COMMAND,
       relayScript: RELAY_SCRIPT,
@@ -21,6 +21,7 @@ export class ClaudeAdapter extends PersistentRelayAdapter {
       label: "Claude",
       interactive: true,
       supportsInterrupt: true,
+      ...timeouts,
     });
   }
 
@@ -31,7 +32,8 @@ export class ClaudeAdapter extends PersistentRelayAdapter {
         CLAUDE_COMMAND,
         ["-p", prompt, "--output-format", "text"],
         {
-          timeout: 120_000,
+          // One-shot mode spawns a fresh CLI per call — every call is a cold start.
+          timeout: this.firstCallTimeoutMs,
           cwd: process.cwd(),
           maxBuffer: 1024 * 1024,
         },

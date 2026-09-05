@@ -42,12 +42,31 @@ ARENA_MODELS="opencode/mimo-v2.5-free,opencode/nemotron-3.5-lightning-free" npx 
 
 Set `ARENA_MODELS` to a single value (or remove `opencode`) to force demo mode.
 
+Per-call timeouts are set per model with `ARENA_TIMEOUTS` — the first call on
+each agent is a cold start and gets its own, larger budget by default (300s vs
+120s steady). Entries are `key=steadyMs[:firstCallMs]`, keys match the full
+`provider/model` or the short model name:
+
+```bash
+ARENA_TIMEOUTS="opencode/nemotron-3.5-lightning-free=180000:360000,mimo-v2.5-free=240000" \
+  npx next start -p 3000
+```
+
 ## API
 
 - `POST /api/arena` — starts an arena session, returns SSE stream of events
-  - Body: `{ agents: [id, id], prompt: string }` (exactly two agent ids)
-  - Events: `session.created`, `session.mode`, `message`, `session.completed`, `error`
+  - Body: `{ agents: [id, id], prompt: string, sessionId?: string }` (exactly two
+    agent ids; the web client sends its own `sessionId` so a reload can
+    reconnect to the same run — curl callers may omit it)
+  - Events: `session.mode`, `message`, `phase`, `receipt`, `session.completed`, `error`
+  - The run is **decoupled from the connection**: it starts immediately, buffers
+    every frame, and keeps running (and replayable) even if the page reloads.
+    Finished runs stay readable for ~5 minutes, then are evicted.
 - `GET /api/arena/agents` — the roster the server can actually run (`live: true/false`)
+- `GET /api/arena/[sessionId]/stream?after=<n>` — reconnects to a run started
+  by POST: replays the buffered frames the client has not yet consumed (its
+  per-session SSE cursor) then streams live to the terminal event. `404` when
+  the run is gone (finished past the window or the server restarted).
 
 ## Architecture
 

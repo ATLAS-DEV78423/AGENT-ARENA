@@ -42,8 +42,9 @@ pnpm install && pnpm dev   # http://localhost:3000
 
 Choose agents, run an Arena, and watch analysis → discussion → review stream in
 real time. The API route (`apps/web/src/app/api/arena`) drives the real
-`Orchestrator` from `@arena/core`; swap `FakeOrchestratorAdapter` for
-`ClaudeAdapter`/`OpenCodeAdapter` to use live agents.
+`Orchestrator` from `@arena/core`; the server detects which agent CLIs/models
+are available and runs them live, falling back to a scripted demo otherwise.
+See `.freebuff/run.md` for the `ARENA_MODELS` / `ARENA_TIMEOUTS` knobs.
 
 ## How It Works
 
@@ -154,7 +155,7 @@ Sessions are saved to `.arena/sessions/`:
 ```
 
 Layering rule: `core` never depends on `agents`/`pty`/`cli`; `agents` depends on
-`core` only. Provider adapters live in `packages/agents/src/<provider>/`.
+`core` and `pty`. Provider adapters live in `packages/agents/src/<provider>/`.
 
 ## Development
 

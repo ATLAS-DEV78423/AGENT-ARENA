@@ -27,6 +27,7 @@ import type { OrchestratorEvent } from "@arena/core";
 import { OpenCodeAdapter } from "@arena/agents";
 import type { Receipt } from "@/lib/types";
 import { noConsensusMessage, translateArenaEvent } from "./events";
+import { resolveModelTimeouts } from "./timeouts";
 import type { ArenaChatMessage, ArenaPhase, ArenaEventNames } from "./events";
 
 export type { ArenaChatMessage, ArenaPhase } from "./events";
@@ -132,9 +133,19 @@ export async function runArena(options: ArenaRunOptions): Promise<ArenaRunResult
   try {
     const adapters =
       mode === "live"
-        ? requestedIds.map(
-            (id) => new OpenCodeAdapter(liveAgents.find((a) => a.id === id)!.model),
-          )
+        ? requestedIds.map((id) => {
+            const agent = liveAgents.find((a) => a.id === id)!;
+            // First call on each relay is a cold start — give it its own,
+            // usually larger, budget (per-model via ARENA_TIMEOUTS).
+            const { steadyMs, firstCallMs } = resolveModelTimeouts(
+              agent.model,
+              process.env.ARENA_TIMEOUTS,
+            );
+            return new OpenCodeAdapter(agent.model, {
+              timeoutMs: steadyMs,
+              firstCallTimeoutMs: firstCallMs,
+            });
+          })
         : requestedIds.map((id) => {
             const agent = DEMO_AGENTS.find((a) => a.id === id);
             return new FakeOrchestratorAdapter(agentId(id), agent?.name ?? id);

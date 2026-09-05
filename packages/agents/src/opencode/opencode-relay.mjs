@@ -11,10 +11,18 @@ const PROMPT_DELIM = process.env.ARENA_PROMPT_DELIM || "__ARENA_PROMPT_END__";
 const OPENCODE_CMD = process.env.ARENA_OPENCODE_CMD || "opencode";
 const MODEL = process.env.ARENA_MODEL || "";
 const TIMEOUT = parseInt(process.env.ARENA_TIMEOUT || "120000", 10);
+// The first call on a fresh relay is a cold start (spawn + provider handshake)
+// and gets its own budget; the adapter always passes both env vars, and counts
+// calls the same way, so the two sides agree per call.
+const FIRST_CALL_TIMEOUT = parseInt(
+  process.env.ARENA_FIRST_CALL_TIMEOUT || String(TIMEOUT),
+  10,
+);
 
 const rl = readline.createInterface({ input: process.stdin });
 
 let promptLines = [];
+let calls = 0;
 let pending = 0;
 let stdinClosed = false;
 
@@ -25,6 +33,8 @@ function exitWhenIdle() {
 
 function runModel(prompt) {
   pending++;
+  const timeout = calls === 0 ? FIRST_CALL_TIMEOUT : TIMEOUT;
+  calls++;
   // execFile with an args array (no shell string). On win32 a command
   // that isn't a real executable (an npm .cmd shim or a shell script —
   // what ARENA_OPENCODE_CMD points at in tests) can't be spawned
@@ -40,7 +50,7 @@ function runModel(prompt) {
   const child = execFile(
     cmd,
     cmdArgs,
-    { timeout: TIMEOUT, maxBuffer: 1024 * 1024 },
+    { timeout, maxBuffer: 1024 * 1024 },
     (err, stdout, stderr) => {
       // opencode prints a banner ("\n> build · model") to stderr even headless;
       // keep stderr only as an error fallback, and strip ANSI codes either way.

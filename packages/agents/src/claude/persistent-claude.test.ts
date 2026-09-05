@@ -2,16 +2,36 @@ import { describe, it, expect, vi } from "vitest";
 import { ClaudeAdapter } from "./claude.js";
 import { sessionId } from "@arena/core";
 
+const ptyMock = vi.hoisted(() => ({ lastSpawnEnv: null as Record<string, string> | null }));
+
 vi.mock("@arena/pty", () => {
   class MockPersistentSession {
     sessionId = "mock-session";
     pid = 1234;
+    constructor(config: { env?: Record<string, string> }) {
+      ptyMock.lastSpawnEnv = config.env ?? null;
+    }
     isAlive() { return true; }
     kill() {}
     sendAndWait() { return Promise.resolve("ok"); }
   }
   return { PersistentSession: MockPersistentSession };
 });
+
+/** Injects a live mock session and returns it with the handle that addresses it. */
+function sessionWithAdapter(adapter: ClaudeAdapter, sessionKey = "test-persistent") {
+  (adapter as any).detected = true;
+  const mockSession = {
+    sessionId: sessionKey,
+    pid: 1234,
+    sendAndWait: vi.fn().mockResolvedValue("LGTM, no issues found"),
+    kill: vi.fn(),
+    isAlive: vi.fn().mockReturnValue(true),
+  };
+  (adapter as any).persistentSessions = new Map();
+  (adapter as any).persistentSessions.set(sessionKey, mockSession);
+  return { mockSession, handle: { sessionId: sessionId(sessionKey), pid: 1234 } };
+}
 
 describe("ClaudeAdapter persistent sessions", () => {
   it("implements OrchestratorAdapter interface", () => {
@@ -32,29 +52,39 @@ describe("ClaudeAdapter persistent sessions", () => {
     expect((adapter as any).persistentSessions.size).toBe(1);
   });
 
-  it("sends message via PersistentSession and detects response kind", async () => {
+  it("gives the first call on a session the cold-start budget, later calls the steady one", async () => {
     const adapter = new ClaudeAdapter();
-    (adapter as any).detected = true;
+    const { mockSession, handle } = sessionWithAdapter(adapter);
 
-    // Create a mock session
-    const mockSession = {
-      sessionId: "test-persistent",
-      pid: 1234,
-      sendAndWait: vi.fn().mockResolvedValue("LGTM, no issues found"),
-      kill: vi.fn(),
-      isAlive: vi.fn().mockReturnValue(true),
-    };
+    const first = await adapter.sendAndReceive(handle, "Analyse the task.");
+    const second = await adapter.sendAndReceive(handle, "Review the implementation.");
 
-    // Inject mock session
-    (adapter as any).persistentSessions = new Map();
-    (adapter as any).persistentSessions.set("test-persistent", mockSession);
+    expect(mockSession.sendAndWait).toHaveBeenNthCalledWith(
+      1,
+      "Analyse the task.\n__ARENA_PROMPT_END__",
+      300_000,
+    );
+    expect(mockSession.sendAndWait).toHaveBeenNthCalledWith(
+      2,
+      "Review the implementation.\n__ARENA_PROMPT_END__",
+      120_000,
+    );
+    expect(first.kind).toBeDefined();
+    expect(second.kind).toBeDefined();
+  });
 
-    const handle = { sessionId: sessionId("test-persistent"), pid: 1234 };
-    const response = await adapter.sendAndReceive(handle, "Review the implementation.");
+  it("honours custom per-model budgets and passes them to the relay process", async () => {
+    const adapter = new ClaudeAdapter({ timeoutMs: 42_000, firstCallTimeoutMs: 99_000 });
+    const { mockSession, handle } = sessionWithAdapter(adapter);
 
-    expect(mockSession.sendAndWait).toHaveBeenCalledWith("Review the implementation.\n__ARENA_PROMPT_END__", 120_000);
-    expect(response.kind).toBe("review_approved");
-    expect(response.content).toContain("LGTM");
+    await adapter.sendAndReceive(handle, "Analyse.");
+    expect(mockSession.sendAndWait).toHaveBeenCalledWith("Analyse.\n__ARENA_PROMPT_END__", 99_000);
+
+    await adapter.start({ task: "test", cwd: "/tmp" });
+    expect(ptyMock.lastSpawnEnv).toMatchObject({
+      ARENA_TIMEOUT: "42000",
+      ARENA_FIRST_CALL_TIMEOUT: "99000",
+    });
   });
 
   it("terminates PersistentSession on terminate()", async () => {

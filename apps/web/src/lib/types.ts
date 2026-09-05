@@ -58,4 +58,9 @@ export interface Session {
   phase?: SessionPhase;
   /** Structured facts for the verdict card; absent on older sessions. */
   receipts?: Receipt[];
+  /**
+   * SSE frames this client has consumed from the run's stream — the cursor a
+   * reloaded page reconnects with, so no frame is replayed twice or lost.
+   */
+  sseCursor?: number;
 }
