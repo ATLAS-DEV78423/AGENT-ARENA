@@ -7,7 +7,15 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      # One red platform shouldn't hide whether the others still pass.
+      fail-fast: false
+      matrix:
+        # win32 stays in the matrix permanently: MISTAKES.md records a
+        # Windows-only bug class (win32 shim resolution / path assumptions)
+        # that ubuntu-only CI cannot catch.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
