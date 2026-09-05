@@ -9,14 +9,14 @@ export function Sidebar() {
   const grouped = groupSessionsByTime(sessions);
 
   return (
-    <aside className="w-56 border-r border-border-subtle bg-surface flex flex-col h-full">
-      {/* Agents */}
+    <aside className="w-60 border-r border-border-subtle bg-surface flex flex-col h-full">
+      {/* New Arena */}
       <div className="p-3">
         <button
           onClick={() => openArena()}
-          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-jade-light hover:bg-hover-surface transition-colors mb-2"
+          className="w-full flex items-center justify-center gap-2 px-2 py-2 rounded-xl bg-jade/10 border border-jade/20 text-sm text-jade-light font-medium hover:bg-jade/15 hover:border-jade/30 transition-all duration-150 mb-3"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="w-4 h-4" />
           New Arena
         </button>
         <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider block mb-2">Agents</span>
@@ -26,13 +26,13 @@ export function Sidebar() {
               key={agent.id}
               onClick={() => openArena([agent.id])}
               title={`Run an arena with ${agent.name}`}
-              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm hover:bg-hover-surface transition-colors group"
+              className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm hover:bg-hover-surface transition-colors group"
             >
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
                 agent.status === "online" ? "bg-status-success" : agent.status === "thinking" ? "bg-status-warning" : "bg-text-disabled"
               )} />
-              <span className="text-text-primary group-hover:text-text-primary truncate">{agent.name}</span>
+              <span className="text-text-primary truncate">{agent.name}</span>
               <span className="ml-auto text-[10px] text-text-disabled font-mono">{agent.provider}</span>
             </button>
           ))}
@@ -56,19 +56,19 @@ export function Sidebar() {
                   key={s.id}
                   onClick={() => setActiveSession(s.id)}
                   className={cn(
-                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left",
+                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left",
                     activeSessionId === s.id
-                      ? "bg-jade-dark/30 text-jade-light"
+                      ? "bg-jade-dark/40 text-jade-light"
                       : "text-text-secondary hover:bg-hover-surface hover:text-text-primary"
                   )}
                 >
-                  <span className="text-jade text-xs">◈</span>
+                  <span className="text-jade text-xs flex-shrink-0">◈</span>
                   <span className="truncate">{s.title}</span>
                   {s.status === "interrupted" && (
                     <span className="ml-auto text-[10px] text-text-disabled flex-shrink-0">interrupted</span>
                   )}
                   {s.status === "error" && (
-                    <span className="ml-auto text-[10px] text-text-disabled flex-shrink-0">failed</span>
+                    <span className="ml-auto text-[10px] text-status-error/80 flex-shrink-0">failed</span>
                   )}
                 </button>
               ))}
@@ -81,7 +81,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-border-subtle space-y-0.5">
         <button
           onClick={openSettings}
-          className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm text-text-muted hover:bg-hover-surface hover:text-text-secondary transition-colors"
+          className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm text-text-muted hover:bg-hover-surface hover:text-text-secondary transition-colors"
         >
           <Settings className="w-3.5 h-3.5" />
           Settings

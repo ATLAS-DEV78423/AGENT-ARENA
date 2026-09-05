@@ -252,11 +252,13 @@ export const useStore = create<ArenaStore>((set) => ({
     set({ sessions: [], activeSessionId: null });
   },
 
+  // The server contract is exactly two minds — selecting a third swaps out
+  // the oldest pick instead of growing the list.
   toggleAgent: (id) =>
     set((state) => ({
       selectedAgentIds: state.selectedAgentIds.includes(id)
         ? state.selectedAgentIds.filter((a) => a !== id)
-        : [...state.selectedAgentIds, id],
+        : [...state.selectedAgentIds, id].slice(-2),
     })),
 
   startArena: async (agentIds, prompt) => {

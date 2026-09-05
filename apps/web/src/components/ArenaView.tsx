@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { Fragment, useState } from "react";
+import { ArrowRight, ArrowLeft, Swords, Sparkles } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -25,27 +25,85 @@ export function ArenaView() {
     setPrompt("");
   };
 
-  const ready = !arenaRunning && prompt.trim() && selectedAgentIds.length === 2;
+  const ready = !arenaRunning && !!prompt.trim() && selectedAgentIds.length === 2;
+  const firstUnselected = agents.find((a) => !selectedAgentIds.includes(a.id));
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-0 p-8">
-      <div className="max-w-lg w-full text-center">
-        <button onClick={closeArena} className="flex items-center gap-1 text-text-muted text-xs mb-4 hover:text-text-secondary transition-colors">
+    <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="max-w-xl mx-auto px-4 py-10">
+        <button
+          onClick={closeArena}
+          className="flex items-center gap-1.5 text-text-muted text-xs mb-8 hover:text-text-secondary transition-colors"
+        >
           <ArrowLeft className="w-3 h-3" /> Back
         </button>
-        <span className="text-3xl text-jade/60 mb-6 block">◈</span>
-        <h2 className="text-lg font-light text-text-primary mb-1">Arena</h2>
-        <p className="text-sm text-text-muted mb-8">Send one prompt to multiple agents. Compare. Decide.</p>
 
-        {/* Agent selection */}
-        <div className="mb-6">
-          <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Choose agents</p>
+        {/* Headline */}
+        <div className="text-center mb-10">
+          <div className="relative inline-block mb-5">
+            <div className="absolute inset-0 -m-6 bg-jade/10 rounded-full blur-2xl" />
+            <span className="relative text-4xl text-jade/70 select-none block">◈</span>
+          </div>
+          <h2 className="text-2xl font-light text-text-primary tracking-tight mb-2">Start an Arena</h2>
+          <p className="text-sm text-text-muted">
+            Two minds. One prompt. They analyse, build, review each other, and report honestly.
+          </p>
+        </div>
+
+        {/* Versus slots */}
+        <div className="mb-8">
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Swords className="w-3.5 h-3.5 text-jade/70" />
+            Pick the two combatants
+          </p>
           {!live && (
             <p className="text-[11px] text-text-muted mb-3">
               No agent CLI on the server — this arena runs a scripted demo.
             </p>
           )}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
+            {([["A", 0], ["B", 1]] as const).map(([slot, i]) => (
+              <Fragment key={slot}>
+                {i === 1 && (
+                  <span
+                    className="self-center text-xs font-mono text-jade/50 tracking-widest select-none px-1"
+                    aria-hidden
+                  >
+                    VS
+                  </span>
+                )}
+                {(() => {
+                  const agent = agents.find((a) => a.id === selectedAgentIds[i]);
+                  return agent ? (
+                    <button
+                      onClick={() => toggleAgent(agent.id)}
+                      className="relative h-full px-4 py-3.5 rounded-2xl border border-jade/30 bg-jade/10 text-left transition-all duration-150 hover:border-jade/45"
+                    >
+                      <span className="absolute top-2.5 right-3 text-[10px] font-mono text-jade/60">{slot}</span>
+                      <span className="block text-sm text-jade-light">{agent.name}</span>
+                      <span className="block text-[10px] font-mono text-jade/60 mt-0.5">{agent.provider}</span>
+                      <span className="block text-[10px] text-text-disabled mt-2">Click to clear</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => firstUnselected && toggleAgent(firstUnselected.id)}
+                      disabled={!firstUnselected}
+                      className="h-full px-4 py-3.5 rounded-2xl border border-dashed border-border-active/50 bg-elevated/40 text-left transition-all duration-150 hover:border-jade/30 hover:bg-elevated disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="text-sm text-text-disabled">Empty slot {slot}</span>
+                      <span className="block text-[10px] text-text-muted mt-2">
+                        {firstUnselected ? `Click to fill with ${firstUnselected.name}` : "No agents available"}
+                      </span>
+                    </button>
+                  );
+                })()}
+              </Fragment>
+            ))}
+          </div>
+
+          {/* Roster chips */}
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             {agents.map((agent) => {
               const selected = selectedAgentIds.includes(agent.id);
               return (
@@ -53,18 +111,13 @@ export function ArenaView() {
                   key={agent.id}
                   onClick={() => toggleAgent(agent.id)}
                   className={cn(
-                    "px-4 py-2 rounded-xl border text-left transition-all duration-150",
+                    "px-3 py-1.5 rounded-full border text-xs transition-all duration-150",
                     selected
-                      ? "bg-jade/10 border-jade/30"
-                      : "bg-elevated border-border-subtle hover:border-border-active"
+                      ? "bg-jade/15 border-jade/30 text-jade-light"
+                      : "bg-elevated border-border-subtle text-text-secondary hover:border-border-active hover:text-text-primary",
                   )}
                 >
-                  <span className={cn("block text-sm leading-tight", selected ? "text-jade-light" : "text-text-secondary")}>
-                    {agent.name}
-                  </span>
-                  <span className={cn("block text-[10px] leading-tight mt-0.5 font-mono", selected ? "text-jade/70" : "text-text-disabled")}>
-                    {agent.provider}
-                  </span>
+                  {agent.name}
                 </button>
               );
             })}
@@ -72,20 +125,25 @@ export function ArenaView() {
         </div>
 
         {/* Prompt input */}
-        <div className="relative mb-3">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleStart()}
-            placeholder="What should the agents work on?"
-            className="w-full px-4 py-3 bg-elevated border border-border-subtle rounded-xl text-text-primary text-sm placeholder:text-text-muted outline-none focus:border-border-active transition-colors"
-          />
-        </div>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleStart();
+            }
+          }}
+          placeholder="What should the agents work on?"
+          rows={3}
+          className="w-full px-4 py-3.5 bg-elevated border border-border-subtle rounded-2xl text-text-primary text-sm placeholder:text-text-muted outline-none focus:border-jade/40 transition-colors resize-none mb-3"
+        />
 
         {!prompt.trim() && (
           <div className="mb-4 flex items-center justify-center gap-2 flex-wrap">
-            <span className="text-[11px] text-text-disabled">Try:</span>
+            <span className="text-[11px] text-text-disabled flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Try:
+            </span>
             {EXAMPLES.map((ex) => (
               <button
                 key={ex}
@@ -102,25 +160,27 @@ export function ArenaView() {
           onClick={handleStart}
           disabled={!ready}
           className={cn(
-            "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
+            "w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-medium transition-all duration-150",
             ready
-              ? "bg-jade text-background hover:bg-jade-light"
-              : "bg-elevated text-text-disabled border border-border-subtle cursor-not-allowed"
+              ? "bg-jade text-background hover:bg-jade-light shadow-lg shadow-jade/10"
+              : "bg-elevated text-text-disabled border border-border-subtle cursor-not-allowed",
           )}
         >
           Run Arena
           <ArrowRight className="w-4 h-4" />
         </button>
 
-        <div className="mt-3 min-h-[16px]">
+        <div className="mt-3 min-h-[16px] text-center">
           {arenaRunning ? (
             <p className="text-[11px] text-text-disabled">An arena is already running — wait for it or dismiss it from its transcript.</p>
           ) : selectedAgentIds.length !== 2 ? (
-            <p className="text-[11px] text-text-disabled">An arena runs between exactly two agents — select two to compare.</p>
+            <p className="text-[11px] text-text-muted">
+              {2 - selectedAgentIds.length === 1 ? "One more agent needed" : "Pick two agents"} — select from the roster; a third pick replaces the oldest.
+            </p>
           ) : !prompt.trim() ? (
-            <p className="text-[11px] text-text-muted">Describe the task, then run — the agents analyse, discuss, and review each other in the transcript.</p>
+            <p className="text-[11px] text-text-muted">Describe the task, then run — the transcript streams every phase.</p>
           ) : (
-            <p className="text-[11px] text-text-muted">{selectedAgentIds.length} agents ready. The run streams to a transcript, then you can compare side by side.</p>
+            <p className="text-[11px] text-jade/70">Ready. The agents will analyse, discuss, and review each other.</p>
           )}
         </div>
       </div>
