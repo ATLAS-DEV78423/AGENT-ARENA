@@ -29,8 +29,11 @@ describe("findDelimiter", () => {
   });
 
   it("is case-sensitive", () => {
-    const d = createDelimiter();
-    expect(findDelimiter(d.end.toUpperCase(), d.end)).toBe(false);
+    // Fixed pair: a random hex id can be all digits (~23% of runs), making
+    // toUpperCase() a no-op and this assertion meaningless.
+    expect(
+      findDelimiter("__ARENA_DELIM_END_ABCD1234__", "__ARENA_DELIM_END_abcd1234__"),
+    ).toBe(false);
   });
 });
 

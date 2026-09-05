@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
 import { FakeOrchestratorAdapter, Orchestrator, agentId } from "@arena/core";
 import type { OrchestratorEvent } from "@arena/core";
@@ -168,6 +168,23 @@ describe("noConsensusMessage — the terminal judge sentence names the real end"
       "The arena session ended in deadlock — repeated objections without resolution.",
     ],
     [
+      "an unresolved reviewer finding names itself as the cause",
+      [
+        event("round.started", { round: 1, builder: "A", reviewer: "B" }),
+        event("finding.created", { severity: "blocker", claim: "null check missing in auth flow" }, "B"),
+        event("budget.exhausted", { rounds: 1 }),
+      ],
+      'The arena session ended without consensus — GPT\'s blocker finding was never resolved: "null check missing in auth flow".',
+    ],
+    [
+      "the latest finding wins when several were filed",
+      [
+        event("finding.created", { severity: "minor", claim: "first" }, "B"),
+        event("finding.created", { severity: "major", claim: "second" }, "A"),
+      ],
+      'The arena session ended without consensus — Claude\'s major finding was never resolved: "second".',
+    ],
+    [
       "only progress events keep the round/time budget sentence",
       [event("analysis.started")],
       "The arena session ended without consensus — the agents could not agree within the round/time budget.",
@@ -204,5 +221,26 @@ describe("core-to-web lifecycle — a real silent plan vote reaches receipt and 
     expect(noConsensusMessage(result.events, NAMES.resolveName)).toBe(
       "The arena session ended without consensus — GPT did not respond in time.",
     );
+  });
+
+  it("names the unresolved finding when rounds exhaust with a finding open", async () => {
+    const randSpy = vi.spyOn(Math, "random").mockReturnValue(0); // A builds, B reviews
+    try {
+      const a = new FakeOrchestratorAdapter(agentId("A"), "A");
+      const b = FakeOrchestratorAdapter.withFindings(agentId("B"), "B");
+      const orch = new Orchestrator(
+        { task: "Build X", cwd: tmpdir(), maxRounds: 1 }, a, b,
+      );
+      const result = await orch.run();
+
+      expect(result.outcome).toBe("timeout");
+      expect(result.events.some((e) => e.type === "consensus.reached")).toBe(false);
+      // The judge sentence cites the real cause: the reviewer's unresolved finding.
+      expect(noConsensusMessage(result.events, NAMES.resolveName)).toMatch(
+        /GPT's blocker finding was never resolved/,
+      );
+    } finally {
+      randSpy.mockRestore();
+    }
   });
 });

@@ -315,6 +315,7 @@ export class Orchestrator {
       let reviewer =
         builder === this.adapterA ? this.adapterB : this.adapterA;
       let isFirstRound = true;
+      let lastFindingSummary: string | undefined;
 
       for (
         let round = 0;
@@ -448,6 +449,7 @@ export class Orchestrator {
           const finding = this.findingManager.create(
             parseFindingFromResponse(rev.content, reviewer.id),
           );
+          lastFindingSummary = `${finding.severity}: ${finding.claim.slice(0, 100)}`;
           this.emit(
             "finding.created",
             {
@@ -481,9 +483,15 @@ export class Orchestrator {
         [builder, reviewer] = [reviewer, builder];
       }
 
-      this.trans("final_review_passed");
-      this.trans("consensus_reached");
-      return this.result("consensus");
+      // Rounds exhausted. Consensus was never re-confirmed after the final
+      // review — the loop's last review produced the findings above, so an
+      // outcome of "consensus" would be fabricated. End honestly.
+      this.trans("timeout");
+      this.emit("budget.exhausted", {
+        rounds: this.config.maxRounds ?? 3,
+        lastFinding: lastFindingSummary,
+      });
+      return this.result("timeout");
     } catch (error) {
       this.log("ERROR: " + String(error));
       if (!this.sid) {
