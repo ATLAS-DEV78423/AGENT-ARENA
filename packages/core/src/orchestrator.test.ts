@@ -213,6 +213,48 @@ describe("Orchestrator - Finding integration", () => {
     expect(findingEvents.length).toBeGreaterThanOrEqual(1);
     expect(findingEvents[0]?.data?.severity).toBe("blocker");
   });
+
+  it("survives a reviewer rejection: REVISING in round 1, role-reversed round 2 still reaches consensus", async () => {
+    // Regression: findings_presented once fired from VERIFYING and crashed the
+    // state machine mid-run (see arena-test.log / MISTAKES.md). This pins the
+    // full two-round path: reject -> REVISING -> resolve -> role swap -> approve.
+    origRandom = origRandom ?? Math.random;
+    Math.random = () => 0; // Agent A = Builder round 1, B = Reviewer
+
+    const builder = new FakeOrchestratorAdapter(agentId("a"), "Builder");
+    const reviewer = FakeOrchestratorAdapter.withFindings(
+      agentId("b"), "Reviewer",
+    );
+    const orch = new Orchestrator(
+      { task: "X", cwd: "/tmp", maxRounds: 2 }, builder, reviewer,
+    );
+    const result = await orch.run();
+
+    expect(result.outcome).toBe("consensus");
+    expect(result.rounds).toBe(2);
+    expect(result.events.some((e) => e.type === "error")).toBe(false);
+
+    // Round 1 files the finding post-transition (REVIEWING → REVISING),
+    // per the transition-then-emit convention — never from VERIFYING, which
+    // is what crashed before e17379e.
+    const finding = result.events.find((e) => e.type === "finding.created");
+    expect(finding?.state).toBe("REVISING");
+    expect(finding?.data?.severity).toBe("blocker");
+
+    // Round 1 revises: exactly the finding event + the fix turn's thinking
+    // announcement carry REVISING, then round 2 swaps the roles.
+    expect(
+      result.events.filter((e) => e.state === "REVISING").map((e) => e.type),
+    ).toEqual(["finding.created", "agent.thinking"]);
+    const rounds = result.events.filter((e) => e.type === "round.started");
+    expect(rounds[0]?.data?.builder).toBe(agentId("a"));
+    expect(rounds[1]?.data?.builder).toBe(agentId("b"));
+    expect(rounds[1]?.data?.reviewer).toBe(agentId("a"));
+
+    // Round 2 approves: same reviewer-now-Builder flow, consensus at the end.
+    expect(result.events.some((e) => e.type === "consensus.reached")).toBe(true);
+    expect(result.state).toMatch(/CONSENSUS|COMPLETED/);
+  });
 });
 
 describe("Orchestrator - agent.thinking progress events", () => {
