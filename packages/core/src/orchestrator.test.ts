@@ -206,7 +206,9 @@ describe("Orchestrator - Finding integration", () => {
     );
     const result = await orch.run();
 
-    expect(result.outcome).toBe("consensus");
+    // The finding is filed in the final round and stays unresolved — the run
+    // ends honestly as timeout, never a fabricated consensus.
+    expect(result.outcome).toBe("timeout");
     const findingEvents = result.events.filter(
       (e) => e.type === "finding.created",
     );
@@ -254,6 +256,28 @@ describe("Orchestrator - Finding integration", () => {
     // Round 2 approves: same reviewer-now-Builder flow, consensus at the end.
     expect(result.events.some((e) => e.type === "consensus.reached")).toBe(true);
     expect(result.state).toMatch(/CONSENSUS|COMPLETED/);
+  });
+
+  it("never reports consensus when rounds exhaust with the finding unresolved", async () => {
+    // Regression: the post-loop path transitioned to consensus even though the
+    // last reviewer's blocker was never addressed — a fabricated verdict that
+    // contradicts the README's "honest outcomes" guarantee.
+    origRandom = origRandom ?? Math.random;
+    Math.random = () => 0; // A builds, B reviews
+
+    const builder = new FakeOrchestratorAdapter(agentId("a"), "Builder");
+    const reviewer = FakeOrchestratorAdapter.withFindings(
+      agentId("b"), "Reviewer",
+    );
+    const orch = new Orchestrator(
+      { task: "X", cwd: "/tmp", maxRounds: 1 }, builder, reviewer,
+    );
+    const result = await orch.run();
+
+    expect(result.outcome).toBe("timeout");
+    expect(result.state).toBe("FAILED");
+    expect(result.events.some((e) => e.type === "consensus.reached")).toBe(false);
+    expect(result.events.some((e) => e.type === "finding.created")).toBe(true);
   });
 });
 

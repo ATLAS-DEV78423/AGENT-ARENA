@@ -53,7 +53,7 @@ export const TRANSITION_TABLE: Record<ArenaState, Partial<Record<ArenaEvent, Are
   REVIEWING:                  { review_completed: "VERIFYING", findings_presented: "REVISING", cancel: "CANCELLED", pause: "PAUSED", agent_crashed: "RECOVERING", timeout: "FAILED" },
   REVISING:                   { findings_resolved: "VERIFYING", review_completed: "VERIFYING", escalate_to_user: "USER_DECISION_REQUIRED", cancel: "CANCELLED", pause: "PAUSED", timeout: "FAILED" },
   VERIFYING:                  { verification_passed: "ROLE_SWITCH", verification_failed: "REVISING", cancel: "CANCELLED", pause: "PAUSED", timeout: "FAILED" },
-  ROLE_SWITCH:                { implementation_started: "IMPLEMENTING", final_review_passed: "FINAL_REVIEW", cancel: "CANCELLED", pause: "PAUSED" },
+  ROLE_SWITCH:                { implementation_started: "IMPLEMENTING", final_review_passed: "FINAL_REVIEW", timeout: "FAILED", cancel: "CANCELLED", pause: "PAUSED" },
   FINAL_REVIEW:               { final_review_passed: "COMPLETED", final_review_failed: "REVISING", consensus_reached: "COMPLETED", escalate_to_user: "USER_DECISION_REQUIRED", cancel: "CANCELLED" },
   CONSENSUS:                  {},
   COMPLETED:                  {},
